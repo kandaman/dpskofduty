@@ -172,7 +172,8 @@ export class Enemy {
         this.acceleration = 8;
         this.fireRate = 250 + Math.random() * 300;
         this.damage = 8;
-        this.baseHitChance = 0.45;
+        this.baseHitChance = 0.50;
+        this.rangePenaltyPerMeter = 0.02;
         this.detectionRange = 30;
         this.attackRange = 20;
         this.health = 100;
@@ -183,7 +184,8 @@ export class Enemy {
         this.acceleration = 14;
         this.fireRate = 400 + Math.random() * 200;
         this.damage = 15;
-        this.baseHitChance = 0.45;
+        this.baseHitChance = 0.55;
+        this.rangePenaltyPerMeter = 0.05;
         this.detectionRange = 35;
         this.attackRange = 8;
         this.health = 60;
@@ -195,7 +197,8 @@ export class Enemy {
         this.acceleration = 4;
         this.fireRate = 1500 + Math.random() * 500;
         this.damage = 40;
-        this.baseHitChance = 0.70;
+        this.baseHitChance = 0.65;
+        this.rangePenaltyPerMeter = 0.01;
         this.detectionRange = 50;
         this.attackRange = 40;
         this.health = 50;
@@ -207,6 +210,7 @@ export class Enemy {
         this.fireRate = 400;
         this.damage = 20;
         this.baseHitChance = 0.55;
+        this.rangePenaltyPerMeter = 0.015;
         this.detectionRange = 50;
         this.attackRange = 30;
         this.health = 300;
@@ -857,16 +861,21 @@ export class Enemy {
     if (!this.game.player || this.game.player.health <= 0) return;
 
     // ── CLEAR ACCURACY MATH ──
-    // baseHitChance: base probability to hit at ideal range
-    // rangePenalty: hit chance drops by 0.02 per meter beyond 5m
-    // minHitChance: 0.05 (always a chance to miss)
-    // maxHitChance: 0.95 (always a chance to survive)
-    const rangePenalty = Math.max(0, (distToPlayer - 5) * 0.02);
-    let hitChance = this.baseHitChance - rangePenalty;
-    hitChance = Math.max(0.05, Math.min(0.95, hitChance));
+    // Each enemy class has its own per-class accuracy curve:
+    //
+    // Rifleman:  50% base, 2%/m beyond 5m → 30% at 15m, 20% at 20m
+    // Rusher:    55% base, 5%/m beyond 5m → 40% at 8m, 5% floor at 15m
+    // Sniper:    65% base, 1%/m beyond 5m → 45% at 25m, 30% at 40m
+    // Boss:      55% base, 1.5%/m beyond 5m → 32% at 20m, 17% at 30m
+    //
+    // All classes: floor 5%, ceiling 95%
 
     // If no line of sight, can't hit
     if (!hasLoS) return;
+
+    const rangePenalty = Math.max(0, (distToPlayer - 5) * this.rangePenaltyPerMeter);
+    let hitChance = this.baseHitChance - rangePenalty;
+    hitChance = Math.max(0.05, Math.min(0.95, hitChance));
 
     // Roll for hit
     if (Math.random() > hitChance) return;
