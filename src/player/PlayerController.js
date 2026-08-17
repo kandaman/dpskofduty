@@ -30,6 +30,8 @@ export class PlayerController {
     this.height = 1.7;
     this.radius = 0.4;
     this.groundTolerance = 0.1;
+    this.bounds = 19; // map boundary (enemies clamped to [-19,19])
+    this._raycaster = new THREE.Raycaster();
 
     // Previous position for footstep detection
     this._prevPos = new THREE.Vector3();
@@ -135,10 +137,40 @@ export class PlayerController {
       this.velocity.y = 0;
     }
 
-    // Apply to position
-    this.position.x += this.velocity.x * dt;
+    // --- Wall collision (axis-independent for smooth sliding) ---
+    const obstacles = this.game.level ? this.game.level.getObstacleMeshes() : [];
+    if (obstacles.length > 0) {
+      // Apply X movement and check collision
+      this.position.x += this.velocity.x * dt;
+      if (Math.abs(this.velocity.x) > 0.001) {
+        const xDir = new THREE.Vector3(Math.sign(this.velocity.x), 0, 0);
+        this._raycaster.set(this.position, xDir);
+        const xHits = this._raycaster.intersectObjects(obstacles, false);
+        if (xHits.length > 0 && xHits[0].distance < this.radius) {
+          this.position.x += (xHits[0].distance - this.radius) * -Math.sign(this.velocity.x);
+          this.velocity.x = 0;
+        }
+      }
+
+      // Apply Z movement and check collision
+      this.position.z += this.velocity.z * dt;
+      if (Math.abs(this.velocity.z) > 0.001) {
+        const zDir = new THREE.Vector3(0, 0, Math.sign(this.velocity.z));
+        this._raycaster.set(this.position, zDir);
+        const zHits = this._raycaster.intersectObjects(obstacles, false);
+        if (zHits.length > 0 && zHits[0].distance < this.radius) {
+          this.position.z += (zHits[0].distance - this.radius) * -Math.sign(this.velocity.z);
+          this.velocity.z = 0;
+        }
+      }
+    }
+
+    // --- Map bounds ---
+    this.position.x = Math.max(-this.bounds, Math.min(this.bounds, this.position.x));
+    this.position.z = Math.max(-this.bounds, Math.min(this.bounds, this.position.z));
+
+    // Apply vertical position
     this.position.y += this.velocity.y * dt;
-    this.position.z += this.velocity.z * dt;
 
     // Ground check (simple - floor at y=0)
     if (this.position.y <= 0) {

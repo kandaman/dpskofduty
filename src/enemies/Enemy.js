@@ -183,7 +183,7 @@ export class Enemy {
         this.acceleration = 14;
         this.fireRate = 400 + Math.random() * 200;
         this.damage = 15;
-        this.baseHitChance = 0.30;
+        this.baseHitChance = 0.45;
         this.detectionRange = 35;
         this.attackRange = 8;
         this.health = 60;
@@ -858,10 +858,10 @@ export class Enemy {
 
     // ── CLEAR ACCURACY MATH ──
     // baseHitChance: base probability to hit at ideal range
-    // rangePenalty: hit chance drops by 0.03 per meter beyond 5m
+    // rangePenalty: hit chance drops by 0.02 per meter beyond 5m
     // minHitChance: 0.05 (always a chance to miss)
     // maxHitChance: 0.95 (always a chance to survive)
-    const rangePenalty = Math.max(0, (distToPlayer - 5) * 0.03);
+    const rangePenalty = Math.max(0, (distToPlayer - 5) * 0.02);
     let hitChance = this.baseHitChance - rangePenalty;
     hitChance = Math.max(0.05, Math.min(0.95, hitChance));
 
