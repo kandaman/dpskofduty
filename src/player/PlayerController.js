@@ -129,40 +129,45 @@ export class PlayerController {
     this.velocity.x = horVel.x;
     this.velocity.z = horVel.z;
 
-    // Gravity
-    if (!this.isGrounded) {
-      this.velocity.y += this.gravity * dt;
-      if (this.velocity.y < -30) this.velocity.y = -30;
-    } else {
-      this.velocity.y = 0;
-    }
-
-    // --- Wall collision (axis-independent for smooth sliding) ---
+    // --- Wall collision (swept check against obstacles) ---
     const obstacles = this.game.level ? this.game.level.getObstacleMeshes() : [];
     if (obstacles.length > 0) {
-      // Apply X movement and check collision
-      this.position.x += this.velocity.x * dt;
+      // X axis: ray from current position in movement direction
       if (Math.abs(this.velocity.x) > 0.001) {
         const xDir = new THREE.Vector3(Math.sign(this.velocity.x), 0, 0);
         this._raycaster.set(this.position, xDir);
         const xHits = this._raycaster.intersectObjects(obstacles, false);
-        if (xHits.length > 0 && xHits[0].distance < this.radius) {
-          this.position.x += (xHits[0].distance - this.radius) * -Math.sign(this.velocity.x);
+        const xMoveDist = Math.abs(this.velocity.x) * dt + this.radius * 1.1;
+        if (xHits.length > 0 && xHits[0].distance < xMoveDist) {
+          const clampX = Math.max(0, xHits[0].distance - this.radius);
+          this.position.x = this.position.x + Math.sign(this.velocity.x) * clampX;
           this.velocity.x = 0;
+        } else {
+          this.position.x += this.velocity.x * dt;
         }
+      } else {
+        this.position.x += this.velocity.x * dt;
       }
 
-      // Apply Z movement and check collision
-      this.position.z += this.velocity.z * dt;
+      // Z axis: ray from current position in movement direction
       if (Math.abs(this.velocity.z) > 0.001) {
         const zDir = new THREE.Vector3(0, 0, Math.sign(this.velocity.z));
         this._raycaster.set(this.position, zDir);
         const zHits = this._raycaster.intersectObjects(obstacles, false);
-        if (zHits.length > 0 && zHits[0].distance < this.radius) {
-          this.position.z += (zHits[0].distance - this.radius) * -Math.sign(this.velocity.z);
+        const zMoveDist = Math.abs(this.velocity.z) * dt + this.radius * 1.1;
+        if (zHits.length > 0 && zHits[0].distance < zMoveDist) {
+          const clampZ = Math.max(0, zHits[0].distance - this.radius);
+          this.position.z = this.position.z + Math.sign(this.velocity.z) * clampZ;
           this.velocity.z = 0;
+        } else {
+          this.position.z += this.velocity.z * dt;
         }
+      } else {
+        this.position.z += this.velocity.z * dt;
       }
+    } else {
+      this.position.x += this.velocity.x * dt;
+      this.position.z += this.velocity.z * dt;
     }
 
     // --- Map bounds ---
@@ -184,6 +189,15 @@ export class PlayerController {
           this.game.audio.playProcedural('impact', { volume: Math.min(impactVel / 20, 1) });
         }
       }
+    }
+
+    // Gravity (applied after position update = semi-implicit Euler)
+    // This ensures jump velocity moves the player BEFORE gravity cancels it
+    if (!this.isGrounded) {
+      this.velocity.y += this.gravity * dt;
+      if (this.velocity.y < -30) this.velocity.y = -30;
+    } else if (this.position.y <= 0) {
+      this.velocity.y = 0;
     }
 
     // --- Footstep detection ---
