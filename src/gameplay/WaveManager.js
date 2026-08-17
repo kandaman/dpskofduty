@@ -233,8 +233,8 @@ export class WaveManager {
           const supportPos = this._getSpawnPosition(def);
           this.game.enemyManager.spawnEnemyAt(supportPos.x, supportPos.z, 'rifleman');
           this.enemiesSpawned++;
+          this.enemiesRemaining++;
         }
-        this.enemiesRemaining += 2;
         this._updateHUD('active');
       }, 2000);
     } else {

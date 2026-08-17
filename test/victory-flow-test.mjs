@@ -209,7 +209,7 @@ async function runVictoryFlowTest() {
             if (fireHeld) { await page.mouse.up(); fireHeld = false; }
           }
 
-          if (state.ammo < 10 && state.reserve > 0 && !state.reloading && !state.gameRunning) {
+          if (state.ammo < 10 && state.reserve > 0 && !state.reloading) {
             await gameEval(page, 'game.weaponController.reload()');
           }
         }

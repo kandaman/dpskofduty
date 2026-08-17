@@ -64,8 +64,8 @@ export class PlayerController {
     const right = this.camera.getRight();
 
     let moveX = 0, moveZ = 0;
-    if (input.isKeyDown('KeyW')) moveZ -= 1;
-    if (input.isKeyDown('KeyS')) moveZ += 1;
+    if (input.isKeyDown('KeyW')) moveZ += 1;
+    if (input.isKeyDown('KeyS')) moveZ -= 1;
     if (input.isKeyDown('KeyA')) moveX -= 1;
     if (input.isKeyDown('KeyD')) moveX += 1;
 
@@ -101,11 +101,13 @@ export class PlayerController {
 
     // Apply friction
     if (horVel.length() > 0) {
-      const frictionForce = friction * dt;
+      const frictionDt = Math.min(dt, 1 / 30);
+      const frictionForce = friction * frictionDt;
       if (frictionForce > horVel.length()) {
         horVel.set(0, 0, 0);
       } else {
-        horVel.normalize().multiplyScalar(horVel.length() - frictionForce);
+        const velLen = horVel.length();
+        horVel.normalize().multiplyScalar(velLen - frictionForce);
       }
     }
 

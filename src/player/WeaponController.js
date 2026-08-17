@@ -152,10 +152,35 @@ export class WeaponController {
     for (const e of enemies) {
       e.mesh.traverse(child => { if (child.isMesh) enemyMeshes.push(child); });
     }
-    const intersects = raycaster.intersectObjects(enemyMeshes, false);
+
+    // Include obstacle/wall meshes so bullets stop at geometry
+    const obstacleMeshes = this.game.level ? this.game.level.getObstacleMeshes() : [];
+    const allTargets = enemyMeshes.concat(obstacleMeshes);
+    const intersects = raycaster.intersectObjects(allTargets, false);
 
     if (intersects.length > 0) {
       const hit = intersects[0];
+
+      // Check if the hit object is an obstacle (wall)
+      let isObstacle = false;
+      for (const obs of obstacleMeshes) {
+        let obj = hit.object;
+        while (obj) {
+          if (obj === obs) { isObstacle = true; break; }
+          obj = obj.parent;
+        }
+        if (isObstacle) break;
+      }
+
+      if (isObstacle) {
+        // Bullet hit a wall — spawn impact
+        if (this.game.effects) {
+          this.game.effects.bulletImpact(hit.point, hit.face.normal);
+        }
+        return;
+      }
+
+      // Hit an enemy — find which one
       const enemy = enemies.find(e => {
         let obj = hit.object;
         while (obj) {

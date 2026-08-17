@@ -312,7 +312,7 @@ async function runPlaythrough() {
         // ── FORCED RELOAD ──
         // If ammo is low and reserve exists, force the game to reload
         // by calling the reload function directly (bypasses input timing issues)
-        if (state.ammo < 10 && state.reserve > 0 && !state.reloading && !state.gameRunning) {
+        if (state.ammo < 10 && state.reserve > 0 && !state.reloading) {
           await gameEval(page, 'game.weaponController.reload()');
         }
         // Release reload key when mag is full

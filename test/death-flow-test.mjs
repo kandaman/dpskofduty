@@ -18,6 +18,21 @@ async function forcePointerLock(page) {
   });
 }
 
+async function waitForGameFrames(page, count, maxMs = 10000) {
+  const startFrame = await page.evaluate(
+    'window.game ? game.renderer.renderer.info.render.frame : 0');
+  let seen = 0;
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const current = await page.evaluate(
+      'window.game ? game.renderer.renderer.info.render.frame : 0');
+    if (current !== startFrame) seen++;
+    if (seen >= count) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return seen >= count;
+}
+
 async function runDeathFlowTest() {
   console.log('═══ DEATH FLOW TEST ═══\n');
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -81,14 +96,15 @@ async function runDeathFlowTest() {
     console.log('   Forcing death via direct health set...');
     await gameEval(page, 'game.player.health = 0');
     await gameEval(page, 'game._onDeath()');
-    await sleep(2000);
+    // Wait for death animation to complete (~3 frames at dt=0.5)
+    await waitForGameFrames(page, 4, 10000);
   }
 
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'death.png') });
   console.log('   ✓ Death triggered');
 
-  // Wait for death animation to complete
-  await sleep(2000);
+  // Wait for death animation to complete (3 frames at dt=0.5 + buffer)
+  await waitForGameFrames(page, 5, 15000);
 
   // Check game over screen is visible
   const gameOverDisplay = await gameEval(page,
@@ -115,7 +131,9 @@ async function runDeathFlowTest() {
     console.log('   No #restart-btn found, using game.restart()...');
     await gameEval(page, 'window.game.restart()');
   }
-  await sleep(2000);
+  // Wait for restart to process and wave 1 to start
+  await waitForGameFrames(page, 2, 10000);
+  await sleep(1500); // Allow wave start timeout (2s from game.start())
 
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'restarted.png') });
 

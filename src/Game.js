@@ -359,7 +359,7 @@ export class Game {
     // Reset weapons
     const weapon = this.weaponController.currentWeapon;
     weapon.ammo = weapon.stats.magSize;
-    // Keep existing reserveAmmo (already set from weapon definition on init)
+    weapon.stats.reserveAmmo = 360;
 
     // Reset UI
     document.getElementById('hit-marker').classList.remove('show');
