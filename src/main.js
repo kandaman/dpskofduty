@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   startBtn.addEventListener('click', () => {
     blocker.style.display = 'none';
     game = new Game();
+    window.game = game;
     game.input.lock();
     game.start();
   });

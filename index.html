@@ -236,6 +236,88 @@
       border-color: rgba(255,0,0,0.5);
     }
 
+    /* Wave Announcement */
+    #wave-announce {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translateX(-50%) scale(0.9);
+      color: #d4a017;
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      text-shadow: 0 0 60px rgba(212,160,23,0.3);
+      opacity: 0;
+      transition: opacity 0.5s, transform 0.5s;
+      pointer-events: none;
+    }
+
+    #wave-info {
+      position: absolute;
+      top: 60px;
+      left: 20px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      opacity: 0.7;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    #wave-info .wave-label { color: #d4a017; font-size: 15px; margin-bottom: 4px; }
+    #wave-info .wave-enemies { color: #888; font-size: 11px; }
+
+    /* Victory Screen */
+    #victory-screen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.85);
+      z-index: 2000;
+    }
+    #victory-screen .victory-title {
+      font-size: 52px;
+      font-weight: 900;
+      letter-spacing: 6px;
+      color: #d4a017;
+      text-shadow: 0 0 60px rgba(212,160,23,0.4);
+      margin-bottom: 16px;
+    }
+    #victory-screen .victory-stats {
+      font-size: 18px;
+      color: #888;
+      margin-bottom: 12px;
+      text-align: center;
+      line-height: 2;
+    }
+    #victory-screen .victory-sub {
+      font-size: 14px;
+      color: #666;
+      letter-spacing: 3px;
+      margin-bottom: 32px;
+      text-transform: uppercase;
+    }
+    #victory-screen .victory-btn {
+      padding: 14px 48px;
+      border: 2px solid #d4a017;
+      background: transparent;
+      color: #d4a017;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s;
+      pointer-events: all;
+    }
+    #victory-screen .victory-btn:hover {
+      background: #d4a017;
+      color: #000;
+    }
+
     #score-display {
       position: absolute;
       top: 15px;
@@ -354,6 +436,9 @@
     <div id="damage-indicator"></div>
 
     <div id="score-display">SCORE: <span id="score-text">0</span></div>
+
+    <div id="wave-announce"></div>
+    <div id="wave-info"></div>
   </div>
 
   <div id="game-over">

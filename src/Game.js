@@ -11,6 +11,8 @@ import { Skybox } from './environment/Skybox.js';
 import { EnemyManager } from './enemies/EnemyManager.js';
 import { EffectsManager } from './effects/EffectsManager.js';
 import { Minimap } from './effects/Minimap.js';
+import { WaveManager } from './gameplay/WaveManager.js';
+import { AmmoPickup } from './gameplay/AmmoPickup.js';
 import { PostPipeline } from './postprocessing/PostPipeline.js';
 
 export class Game {
@@ -57,6 +59,11 @@ export class Game {
     this.healthRegenTimer = 0;
     this.healthRegenRate = 15; // HP per second
 
+    // Gameplay systems
+    this.waveManager = new WaveManager(this);
+    this.ammoPickup = new AmmoPickup(this.scene);
+    this.ammoPickup.game = this;
+
     // Minimap
     this.minimap = new Minimap(this);
 
@@ -77,9 +84,8 @@ export class Game {
     this.running = true;
     this.clock.start();
 
-    // Initial enemy spawn
-    this.enemyManager.spawnEnemy();
-    this.enemyManager.spawnEnemy();
+    // Start wave-based progression
+    this.waveManager.start();
 
     this._loop();
   }
@@ -91,7 +97,7 @@ export class Game {
     const dt = Math.min(this.clock.getDelta(), 0.05); // Cap at 50ms
 
     this._update(dt);
-    this._render();
+    this._render(dt);
   }
 
   _update(dt) {
@@ -135,8 +141,14 @@ export class Game {
     // Debug weapon position
     this.weaponController.weaponGroup.position.set(0, 0, 0);
 
+    // Update wave manager
+    this.waveManager.update(dt);
+
     // Update enemies
     this.enemyManager.update(dt);
+
+    // Update ammo pickup
+    this.ammoPickup.update(dt, this.player.position);
 
     // Update skybox
     this.skybox.update(dt);
@@ -242,8 +254,8 @@ export class Game {
     this._compassStrip.style.transform = `translateX(${-deg * 2 + 360}px)`;
   }
 
-  _render() {
-    this.postPipeline.render();
+  _render(dt) {
+    this.postPipeline.render(dt);
   }
 
   addScore(points) {
@@ -282,6 +294,28 @@ export class Game {
     document.getElementById('game-over').style.display = 'flex';
   }
 
+  _showVictory() {
+    document.getElementById('final-score').textContent = this.score;
+    document.getElementById('final-kills').textContent = this.enemyManager.killCount;
+    document.getElementById('wave-announce').textContent = 'MISSION COMPLETE';
+    document.getElementById('wave-announce').style.opacity = '1';
+
+    const hud = document.getElementById('hud');
+    if (hud) {
+      hud.innerHTML = `
+        <div id="victory-screen">
+          <h1 class="victory-title">MISSION COMPLETE</h1>
+          <div class="victory-stats">
+            <p>SCORE: <span id="final-score">${this.score}</span></p>
+            <p>KILLS: <span id="final-kills">${this.enemyManager.killCount}</span></p>
+          </div>
+          <div class="victory-sub">ALL HOSTILES ELIMINATED</div>
+          <button id="victory-restart" onclick="window.game.restart()" class="victory-btn">PLAY AGAIN</button>
+        </div>
+      `;
+    }
+  }
+
   restart() {
     // Reset player
     this.player.health = this.player.maxHealth;
@@ -304,6 +338,9 @@ export class Game {
     // Reset effects
     this.effects.reset();
 
+    // Reset wave manager
+    this.waveManager.reset();
+
     // Reset weapons
     this.weaponController.currentWeapon.ammo = this.weaponController.currentWeapon.stats.magSize;
     this.weaponController.currentWeapon.stats.reserveAmmo = this.weaponController.currentWeapon.stats.magSize * 3;
@@ -324,9 +361,8 @@ export class Game {
     // Re-lock pointer
     this.input.lock();
 
-    // Spawn initial enemies
-    this.enemyManager.spawnEnemy();
-    this.enemyManager.spawnEnemy();
+    // Start wave progression
+    this.waveManager.start();
   }
 
   stop() {

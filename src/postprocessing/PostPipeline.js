@@ -4,7 +4,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
-import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
+import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import * as THREE from 'three';
 
 export class PostPipeline {
@@ -77,9 +77,9 @@ export class PostPipeline {
     });
     this.composer.addPass(colorPass);
 
-    // --- FXAA (anti-aliasing) ---
-    const fxaaPass = new FXAAPass(window.innerWidth, window.innerHeight);
-    this.composer.addPass(fxaaPass);
+    // --- SMAA (anti-aliasing) ---
+    const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+    this.composer.addPass(smaaPass);
 
     // --- Output pass (mandatory for correct tone mapping in r185+) ---
     const outputPass = new OutputPass();
@@ -90,7 +90,7 @@ export class PostPipeline {
       const w = window.innerWidth;
       const h = window.innerHeight;
       this.composer.setSize(w, h);
-      fxaaPass.setSize(w, h);
+      smaaPass.setSize(w, h);
     };
     window.addEventListener('resize', this._onResize);
   }

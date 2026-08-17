@@ -240,7 +240,12 @@ export class WeaponController {
     );
     shell.rotation.x = Math.PI / 2;
     const worldPos = new THREE.Vector3();
-    weapon.shellEjectPoint.getWorldPosition(worldPos);
+    try {
+      weapon.shellEjectPoint.getWorldPosition(worldPos);
+    } catch (e) {
+      // Fallback if matrix world not ready
+      worldPos.copy(weapon.shellEjectPoint.position);
+    }
     shell.position.copy(worldPos);
     this.scene.add(shell);
 

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 export class Enemy {
-  constructor(game, position) {
+  constructor(game, position, type = 'rifleman') {
     this.game = game;
+    this.type = type;
     this.health = 100;
     this.maxHealth = 100;
     this.alive = true;
@@ -14,16 +15,16 @@ export class Enemy {
     // Movement
     this.position = position.clone();
     this.velocity = new THREE.Vector3();
-    this.moveSpeed = 2 + Math.random() * 1.5;
-    this.acceleration = 8;
 
     // AI
     this.detectionRange = 30;
     this.attackRange = 20;
-    this.fireRate = 200 + Math.random() * 300;
     this.fireTimer = 0;
     this.damage = 8;
     this.accuracy = 0.08;
+
+    // Type-specific defaults
+    this._applyTypeDefaults(type);
 
     // Patrol
     this.patrolTarget = this._randomPatrolPoint();
@@ -40,6 +41,9 @@ export class Enemy {
     this.coverPos = null;
     this.coverTimer = 0;
     this.inCover = false;
+
+    // Aggressive closing distance
+    this.closingDistance = 0;
 
     // Animation
     this.animTime = 0;
@@ -148,6 +152,57 @@ export class Enemy {
     });
 
     return group;
+  }
+
+  _applyTypeDefaults(type) {
+    switch (type) {
+      case 'rifleman':
+        this.moveSpeed = 2 + Math.random() * 1.5;
+        this.acceleration = 8;
+        this.fireRate = 250 + Math.random() * 300;
+        this.damage = 8;
+        this.accuracy = 0.08;
+        this.detectionRange = 30;
+        this.attackRange = 20;
+        this.health = 100;
+        break;
+
+      case 'rusher':
+        this.moveSpeed = 5 + Math.random() * 1.5;
+        this.acceleration = 14;
+        this.fireRate = 400 + Math.random() * 200;
+        this.damage = 15;
+        this.accuracy = 0.15;
+        this.detectionRange = 35;
+        this.attackRange = 8;
+        this.health = 60;
+        // Rushers close distance fast
+        this.closingDistance = 1;
+        break;
+
+      case 'sniper':
+        this.moveSpeed = 1 + Math.random() * 0.5;
+        this.acceleration = 4;
+        this.fireRate = 1500 + Math.random() * 500;
+        this.damage = 25;
+        this.accuracy = 0.02;
+        this.detectionRange = 50;
+        this.attackRange = 40;
+        this.health = 50;
+        break;
+
+      case 'boss':
+        this.moveSpeed = 1.5;
+        this.acceleration = 6;
+        this.fireRate = 400;
+        this.damage = 20;
+        this.accuracy = 0.03;
+        this.detectionRange = 50;
+        this.attackRange = 30;
+        this.health = 300;
+        break;
+    }
+    this.maxHealth = this.health;
   }
 
   _createHealthBar() {
@@ -329,59 +384,178 @@ export class Enemy {
 
   _combatUpdate(dt, playerPos, toPlayer, distToPlayer) {
     this._lookAt(playerPos);
-
-    // Strafe and flank logic
     this.combatMoveTimer += dt;
     this.strafeTimer -= dt;
 
-    // Change strafe direction periodically
+    // Update last known player position
+    this.lastKnownPlayerPos = playerPos.clone();
+
+    switch (this.type) {
+      case 'rifleman':
+        this._combatRifleman(dt, playerPos, toPlayer, distToPlayer);
+        break;
+      case 'rusher':
+        this._combatRusher(dt, playerPos, toPlayer, distToPlayer);
+        break;
+      case 'sniper':
+        this._combatSniper(dt, playerPos, toPlayer, distToPlayer);
+        break;
+      case 'boss':
+        this._combatBoss(dt, playerPos, toPlayer, distToPlayer);
+        break;
+    }
+  }
+
+  _combatRifleman(dt, playerPos, toPlayer, distToPlayer) {
     if (this.strafeTimer <= 0) {
       this.strafeDir = (Math.random() > 0.5 ? 1 : -1) * (this.strafeDir > 0 ? 1 : -1);
       this.strafeTimer = 1.5 + Math.random() * 2;
     }
 
-    // Update last known player position
-    this.lastKnownPlayerPos = playerPos.clone();
-
     if (distToPlayer > this.attackRange * 0.8) {
-      // Approach aggressively
-      const approachDir = toPlayer;
-      const strafeOffset = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
-      const moveDir = approachDir.clone().add(strafeOffset.multiplyScalar(this.strafeDir * 0.3));
+      // Approach with strafe
+      const strafe = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+      const moveDir = toPlayer.clone().add(strafe.multiplyScalar(this.strafeDir * 0.3));
       moveDir.normalize();
-
       this.velocity.x += (moveDir.x * this.moveSpeed - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
       this.velocity.z += (moveDir.z * this.moveSpeed - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
-
       this._walkAnim(dt, 1.0);
     } else {
-      // In range - strafe with occasional advances/retreats
       const strafeAxis = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
       const pushPull = Math.sin(this.combatMoveTimer * 0.7) * 0.3;
       const moveDir = strafeAxis.clone().multiplyScalar(this.strafeDir)
         .add(toPlayer.clone().multiplyScalar(pushPull));
       moveDir.normalize();
-
       this.velocity.x += (moveDir.x * this.moveSpeed * 0.7 - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
       this.velocity.z += (moveDir.z * this.moveSpeed * 0.7 - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
 
-      // Shoot
       this.fireTimer -= dt * 1000;
       if (this.fireTimer <= 0) {
         this._fireAtPlayer(distToPlayer);
         this.fireTimer = this.fireRate + (Math.random() - 0.5) * 100;
       }
-
       this._walkAnim(dt, 0.7);
     }
 
-    // Apply velocity
+    this._applyMovement(dt);
+  }
+
+  _combatRusher(dt, playerPos, toPlayer, distToPlayer) {
+    // Rushers sprint directly at player, weaving slightly
+    if (this.strafeTimer <= 0) {
+      this.strafeDir = (Math.random() > 0.5 ? 1 : -1);
+      this.strafeTimer = 0.5 + Math.random() * 1;
+    }
+
+    const strafeOffset = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+    const weaveAmount = distToPlayer < 5 ? 0.1 : 0.4;
+    const moveDir = toPlayer.clone().add(strafeOffset.multiplyScalar(this.strafeDir * weaveAmount));
+    moveDir.normalize();
+
+    // Rushers move faster the closer they get
+    const speedMul = 0.5 + (1 - Math.min(distToPlayer / 25, 1)) * 0.5;
+    const speed = this.moveSpeed * speedMul;
+
+    this.velocity.x += (moveDir.x * speed - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
+    this.velocity.z += (moveDir.z * speed - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
+    this._walkAnim(dt, speedMul * 1.5);
+
+    // Fire when close
+    if (distToPlayer < this.attackRange) {
+      this.fireTimer -= dt * 1000;
+      if (this.fireTimer <= 0) {
+        this._fireAtPlayer(distToPlayer);
+        this.fireTimer = this.fireRate + (Math.random() - 0.5) * 100;
+      }
+    }
+
+    this._applyMovement(dt);
+  }
+
+  _combatSniper(dt, playerPos, toPlayer, distToPlayer) {
+    // Snipers maintain distance and fire precisely
+    if (this.strafeTimer <= 0) {
+      this.strafeDir = (Math.random() > 0.5 ? 1 : -1);
+      this.strafeTimer = 3 + Math.random() * 2;
+    }
+
+    if (distToPlayer < this.attackRange * 0.6) {
+      // Retreat
+      const retreatDir = toPlayer.clone().negate();
+      const strafe = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+      const moveDir = retreatDir.add(strafe.multiplyScalar(this.strafeDir * 0.5));
+      moveDir.normalize();
+      this.velocity.x += (moveDir.x * this.moveSpeed - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
+      this.velocity.z += (moveDir.z * this.moveSpeed - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
+    } else {
+      // Hold position, slight strafe
+      this.velocity.x *= (1 - Math.exp(-5 * dt));
+      this.velocity.z *= (1 - Math.exp(-5 * dt));
+    }
+
+    this._walkAnim(dt, 0.3);
+
+    // Fire slowly and accurately
+    this.fireTimer -= dt * 1000;
+    if (this.fireTimer <= 0) {
+      this._fireAtPlayer(distToPlayer);
+      this.fireTimer = this.fireRate + Math.random() * 200;
+    }
+
+    this._applyMovement(dt);
+  }
+
+  _combatBoss(dt, playerPos, toPlayer, distToPlayer) {
+    // Boss has phases based on HP
+    const hpPct = this.health / this.maxHealth;
+
+    if (this.strafeTimer <= 0) {
+      this.strafeDir = (Math.random() > 0.5 ? 1 : -1);
+      this.strafeTimer = 2 + Math.random() * 1;
+    }
+
+    // Below 50% HP, boss becomes more aggressive
+    const aggroMul = hpPct < 0.5 ? 1.5 : 1.0;
+
+    if (distToPlayer > this.attackRange * 0.6) {
+      const strafe = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+      const moveDir = toPlayer.clone().add(strafe.multiplyScalar(this.strafeDir * 0.2));
+      moveDir.normalize();
+      this.velocity.x += (moveDir.x * this.moveSpeed * aggroMul - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
+      this.velocity.z += (moveDir.z * this.moveSpeed * aggroMul - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
+    } else {
+      const strafeAxis = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+      const moveDir = strafeAxis.clone().multiplyScalar(this.strafeDir).add(toPlayer.clone().multiplyScalar(0.3));
+      moveDir.normalize();
+      this.velocity.x += (moveDir.x * this.moveSpeed * 0.8 - this.velocity.x) * (1 - Math.exp(-this.acceleration * dt));
+      this.velocity.z += (moveDir.z * this.moveSpeed * 0.8 - this.velocity.z) * (1 - Math.exp(-this.acceleration * dt));
+    }
+
+    // Boss fires more frequently
+    const fireRateScaled = hpPct < 0.3 ? this.fireRate * 0.6 : (hpPct < 0.5 ? this.fireRate * 0.8 : this.fireRate);
+    this.fireTimer -= dt * 1000;
+    if (this.fireTimer <= 0) {
+      // Boss fires in bursts
+      const burstCount = hpPct < 0.3 ? 4 : 2;
+      for (let i = 0; i < burstCount; i++) {
+        setTimeout(() => {
+          if (!this.alive) return;
+          this._fireAtPlayer(distToPlayer);
+        }, i * 100);
+      }
+      this.fireTimer = fireRateScaled + Math.random() * 200;
+    }
+
+    this._applyMovement(dt);
+  }
+
+  _applyMovement(dt) {
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
 
-    // Keep within bounds (-19 to 19)
-    this.position.x = Math.max(-19, Math.min(19, this.position.x));
-    this.position.z = Math.max(-19, Math.min(19, this.position.z));
+    const bound = this.type === 'boss' ? 22 : 19;
+    this.position.x = Math.max(-bound, Math.min(bound, this.position.x));
+    this.position.z = Math.max(-bound, Math.min(bound, this.position.z));
 
     this.mesh.position.x = this.position.x;
     this.mesh.position.z = this.position.z;
