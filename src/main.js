@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Game } from './Game.js';
 
 // Wait for DOM
@@ -10,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   startBtn.addEventListener('click', () => {
     blocker.style.display = 'none';
+    window.THREE = THREE;
     game = new Game();
     window.game = game;
     game.input.lock();

@@ -138,6 +138,7 @@ export class WeaponController {
 
     raycaster.set(camera.position, dir);
     raycaster.far = 200;
+    raycaster.camera = camera; // Needed for Sprite raycast; we avoid sprites but set for safety
 
     // Fire tracer
     if (this.game.effects) {
@@ -145,9 +146,13 @@ export class WeaponController {
     }
 
     const enemies = this.game.enemyManager ? this.game.enemyManager.enemies : [];
-    const enemyMeshes = enemies.map(e => e.mesh);
-
-    const intersects = raycaster.intersectObjects(enemyMeshes, true);
+    // Collect all descendant Meshes (skip Sprites like health bars to avoid
+    // THREE.js Sprite.raycast crash when raycaster.camera is null)
+    const enemyMeshes = [];
+    for (const e of enemies) {
+      e.mesh.traverse(child => { if (child.isMesh) enemyMeshes.push(child); });
+    }
+    const intersects = raycaster.intersectObjects(enemyMeshes, false);
 
     if (intersects.length > 0) {
       const hit = intersects[0];
@@ -329,8 +334,10 @@ export class WeaponController {
   _updateHUD() {
     const weapon = this.currentWeapon;
     if (!weapon) return;
-    document.getElementById('ammo-current').textContent = weapon.ammo;
-    document.getElementById('ammo-reserve').textContent = weapon.stats.reserveAmmo;
+    const ac = document.getElementById('ammo-current');
+    const ar = document.getElementById('ammo-reserve');
+    if (ac) ac.textContent = weapon.ammo;
+    if (ar) ar.textContent = weapon.stats.reserveAmmo;
   }
 
   update(dt) {
@@ -442,7 +449,8 @@ export class WeaponController {
 
     // --- HUD updates ---
     if (this.currentWeapon) {
-      document.getElementById('ammo-current').textContent = this.currentWeapon.ammo;
+      const ac = document.getElementById('ammo-current');
+      if (ac) ac.textContent = this.currentWeapon.ammo;
     }
   }
 }

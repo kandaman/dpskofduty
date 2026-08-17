@@ -4,7 +4,12 @@ export class Level {
   constructor(scene) {
     this.scene = scene;
     this.objects = [];
+    this.obstacleMeshes = []; // solid geometry for raycasting / navigation
     this._build();
+  }
+
+  getObstacleMeshes() {
+    return this.obstacleMeshes;
   }
 
   _makeMat(color, roughness = 0.7, metalness = 0.1) {
@@ -23,6 +28,12 @@ export class Level {
     return mesh;
   }
 
+  _addObstacle(geom, mat, pos, rot = new THREE.Euler(), scale = new THREE.Vector3(1, 1, 1)) {
+    const mesh = this._addMesh(geom, mat, pos, rot, scale);
+    this.obstacleMeshes.push(mesh);
+    return mesh;
+  }
+
   _buildBuilding(pos, w, h, d, color, hasWindows = true) {
     const wallMat = this._makeMat(color, 0.8, 0.1);
     const roofMat = this._makeMat(0x444444, 0.9, 0.05);
@@ -30,8 +41,8 @@ export class Level {
     windowMat.emissive = new THREE.Color(0x112244);
     windowMat.emissiveIntensity = 0.1;
 
-    // Main structure
-    this._addMesh(new THREE.BoxGeometry(w, h, d), wallMat,
+    // Main structure — obstacle
+    this._addObstacle(new THREE.BoxGeometry(w, h, d), wallMat,
       new THREE.Vector3(pos.x, pos.y + h / 2, pos.z));
 
     // Roof
@@ -90,14 +101,14 @@ export class Level {
     // --- Central monument / structure ---
     const monumentMat = this._makeMat(0x555566, 0.4, 0.6);
     // Base
-    this._addMesh(new THREE.CylinderGeometry(5, 6, 0.8, 16), monumentMat,
+    this._addObstacle(new THREE.CylinderGeometry(5, 6, 0.8, 16), monumentMat,
       new THREE.Vector3(0, 0.4, 0));
     // Column
-    this._addMesh(new THREE.CylinderGeometry(0.6, 0.8, 5, 12),
+    this._addObstacle(new THREE.CylinderGeometry(0.6, 0.8, 5, 12),
       this._makeMat(0x666677, 0.3, 0.7),
       new THREE.Vector3(0, 3.3, 0));
     // Top
-    this._addMesh(new THREE.CylinderGeometry(1.2, 0.6, 0.4, 12),
+    this._addObstacle(new THREE.CylinderGeometry(1.2, 0.6, 0.4, 12),
       this._makeMat(0x777788, 0.2, 0.8),
       new THREE.Vector3(0, 5.5, 0));
 
@@ -121,11 +132,11 @@ export class Level {
 
     // --- Walkway connecting two buildings ---
     const walkwayMat = this._makeMat(0x555555, 0.7, 0.3);
-    const walkway = this._addMesh(new THREE.BoxGeometry(6, 0.15, 2), walkwayMat,
+    const walkway = this._addObstacle(new THREE.BoxGeometry(6, 0.15, 2), walkwayMat,
       new THREE.Vector3(0, 3, -7));
     // Walkway pillars
     for (let x of [-3, 3]) {
-      this._addMesh(new THREE.CylinderGeometry(0.08, 0.1, 3, 6),
+      this._addObstacle(new THREE.CylinderGeometry(0.08, 0.1, 3, 6),
         this._makeMat(0x444444, 0.5, 0.5),
         new THREE.Vector3(x, 1.5, -7));
     }
@@ -158,7 +169,7 @@ export class Level {
     ];
 
     for (const [pos, w, h, rot] of barrierPositions) {
-      this._addMesh(
+      this._addObstacle(
         new THREE.BoxGeometry(w, h, 0.3),
         barrierMat,
         new THREE.Vector3(pos[0], h / 2, pos[1])
@@ -174,13 +185,13 @@ export class Level {
     for (const pos of sandbagPositions) {
       const x = pos[0], z = pos[1] || 0;
       for (let layer = 0; layer < 2; layer++) {
-        this._addMesh(
+        this._addObstacle(
           new THREE.BoxGeometry(0.8, 0.25, 0.4),
           sandbagMat,
           new THREE.Vector3(x + (layer === 1 ? 0.15 : 0), 0.15 + layer * 0.2, z)
         );
         if (layer === 0) {
-          this._addMesh(
+          this._addObstacle(
             new THREE.BoxGeometry(0.8, 0.25, 0.4),
             sandbagMat,
             new THREE.Vector3(x - 0.15, 0.35, z)
@@ -207,7 +218,7 @@ export class Level {
       [-20, 0, 0], [20, 0, 0], [0, 0, -20], [0, 0, 20]
     ];
     for (const pos of hescoPositions) {
-      this._addMesh(new THREE.BoxGeometry(1, 1.2, 1), hescoMat,
+      this._addObstacle(new THREE.BoxGeometry(1, 1.2, 1), hescoMat,
         new THREE.Vector3(pos[0], 0.6, pos[2]));
     }
 
@@ -222,7 +233,7 @@ export class Level {
       [0, 0.3, -12], [0, 0.3, 12]
     ];
     for (const pos of cratePositions) {
-      this._addMesh(new THREE.BoxGeometry(0.6, pos[1] * 2, 0.6), crateMat,
+      this._addObstacle(new THREE.BoxGeometry(0.6, pos[1] * 2, 0.6), crateMat,
         new THREE.Vector3(pos[0], pos[1], pos[2]));
     }
 
@@ -232,7 +243,7 @@ export class Level {
       [-15, 5], [15, -5]
     ];
     for (const pos of barrelPositions) {
-      this._addMesh(new THREE.CylinderGeometry(0.2, 0.22, 0.4, 8), barrelMat2,
+      this._addObstacle(new THREE.CylinderGeometry(0.2, 0.22, 0.4, 8), barrelMat2,
         new THREE.Vector3(pos[0], 0.2, pos[1]));
     }
 
@@ -277,23 +288,23 @@ export class Level {
     const carMat = this._makeMat(0x554433, 0.8, 0.2);
     const carDark = this._makeMat(0x222222, 0.7, 0.4);
     // Body
-    this._addMesh(new THREE.BoxGeometry(1.5, 0.4, 0.8), carMat,
+    this._addObstacle(new THREE.BoxGeometry(1.5, 0.4, 0.8), carMat,
       new THREE.Vector3(-15, 0.3, 6));
     // Cabin
-    this._addMesh(new THREE.BoxGeometry(0.8, 0.3, 0.6), carDark,
+    this._addObstacle(new THREE.BoxGeometry(0.8, 0.3, 0.6), carDark,
       new THREE.Vector3(-15, 0.6, 6));
     // Wheels
     for (let wx of [-0.6, 0.6]) {
       for (let wz of [-0.4, 0.4]) {
-        this._addMesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 6), carDark,
+        this._addObstacle(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 6), carDark,
           new THREE.Vector3(-15 + wx, 0.12, 6 + wz));
       }
     }
 
     // --- Second vehicle ---
-    this._addMesh(new THREE.BoxGeometry(1.5, 0.4, 0.8), this._makeMat(0x445544, 0.8, 0.2),
+    this._addObstacle(new THREE.BoxGeometry(1.5, 0.4, 0.8), this._makeMat(0x445544, 0.8, 0.2),
       new THREE.Vector3(14, 0.3, -5));
-    this._addMesh(new THREE.BoxGeometry(0.8, 0.3, 0.6), carDark,
+    this._addObstacle(new THREE.BoxGeometry(0.8, 0.3, 0.6), carDark,
       new THREE.Vector3(14, 0.6, -5));
     for (let wx of [-0.6, 0.6]) {
       for (let wz of [-0.4, 0.4]) {

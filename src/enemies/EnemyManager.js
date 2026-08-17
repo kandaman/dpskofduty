@@ -6,17 +6,20 @@ export class EnemyManager {
     this.game = game;
     this.enemies = [];
     this.killCount = 0;
+    this.obstacles = [];
   }
 
   spawnEnemyAt(x, z, type = 'rifleman') {
     const pos = new THREE.Vector3(x, 0, z);
     const enemy = new Enemy(this.game, pos, type);
+    enemy.obstacles = this.obstacles;
     this.enemies.push(enemy);
     return enemy;
   }
 
   spawnBoss(position) {
     const enemy = new Enemy(this.game, position, 'boss');
+    enemy.obstacles = this.obstacles;
     // Boss is big - scale it up
     enemy.mesh.scale.set(1.5, 1.5, 1.5);
     this.enemies.push(enemy);

@@ -13,6 +13,7 @@ import { EffectsManager } from './effects/EffectsManager.js';
 import { Minimap } from './effects/Minimap.js';
 import { WaveManager } from './gameplay/WaveManager.js';
 import { AmmoPickup } from './gameplay/AmmoPickup.js';
+import { CombatDirector } from './gameplay/CombatDirector.js';
 import { PostPipeline } from './postprocessing/PostPipeline.js';
 
 export class Game {
@@ -40,11 +41,17 @@ export class Game {
     this.level = new Level(this.scene);
     this.skybox = new Skybox(this.scene);
 
+    // Share obstacle meshes with enemy manager
+    this.enemyManager.obstacles = this.level.getObstacleMeshes();
+
     // Set camera reference in PlayerController
     this.player.camera = this.camera;
 
     // Clock
     this.clock = new THREE.Clock();
+
+    // DT cap: can be increased for testing at low framerates
+    this.dtCap = 0.05;
 
     // Game loop binding
     this._boundLoop = this._loop.bind(this);
@@ -60,6 +67,7 @@ export class Game {
     this.healthRegenRate = 15; // HP per second
 
     // Gameplay systems
+    this.combatDirector = new CombatDirector(this);
     this.waveManager = new WaveManager(this);
     this.ammoPickup = new AmmoPickup(this.scene);
     this.ammoPickup.game = this;
@@ -94,7 +102,10 @@ export class Game {
     if (!this.running) return;
     requestAnimationFrame(this._boundLoop);
 
-    const dt = Math.min(this.clock.getDelta(), 0.05); // Cap at 50ms
+    const dt = Math.min(this.clock.getDelta(), this.dtCap);
+
+    // Update world matrices for raycasting (enemy LOS checks)
+    this.scene.updateMatrixWorld(true);
 
     this._update(dt);
     this._render(dt);
@@ -169,12 +180,15 @@ export class Game {
     }
 
     // Update score display
-    document.getElementById('score-text').textContent = this.score;
+    const scoreEl = document.getElementById('score-text');
+    if (scoreEl) scoreEl.textContent = this.score;
 
     // Update health display
     const healthPct = Math.max(0, this.player.health / this.player.maxHealth);
-    document.getElementById('health-fill').style.width = (healthPct * 100) + '%';
-    document.getElementById('health-text').textContent = Math.ceil(this.player.health);
+    const healthFill = document.getElementById('health-fill');
+    const healthText = document.getElementById('health-text');
+    if (healthFill) healthFill.style.width = (healthPct * 100) + '%';
+    if (healthText) healthText.textContent = Math.ceil(this.player.health);
 
     // Regen bar (shows when regen will start)
     const regenBar = document.getElementById('regen-fill');
@@ -338,12 +352,14 @@ export class Game {
     // Reset effects
     this.effects.reset();
 
-    // Reset wave manager
+    // Reset wave manager and combat director
+    this.combatDirector.reset();
     this.waveManager.reset();
 
     // Reset weapons
-    this.weaponController.currentWeapon.ammo = this.weaponController.currentWeapon.stats.magSize;
-    this.weaponController.currentWeapon.stats.reserveAmmo = this.weaponController.currentWeapon.stats.magSize * 3;
+    const weapon = this.weaponController.currentWeapon;
+    weapon.ammo = weapon.stats.magSize;
+    // Keep existing reserveAmmo (already set from weapon definition on init)
 
     // Reset UI
     document.getElementById('hit-marker').classList.remove('show');

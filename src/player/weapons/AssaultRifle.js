@@ -8,7 +8,7 @@ export class AssaultRifle {
       damage: 28,
       fireRate: 750,
       magSize: 30,
-      reserveAmmo: 90,
+      reserveAmmo: 360,
       reloadTime: 2100,
       recoilPitch: 0.04,
       recoilYaw: 0.02,
