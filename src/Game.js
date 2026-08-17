@@ -1,0 +1,337 @@
+import * as THREE from 'three';
+import { Renderer } from './engine/Renderer.js';
+import { InputManager } from './engine/InputManager.js';
+import { AudioManager } from './engine/AudioManager.js';
+import { PlayerCamera } from './player/PlayerCamera.js';
+import { PlayerController } from './player/PlayerController.js';
+import { WeaponController } from './player/WeaponController.js';
+import { Level } from './environment/Level.js';
+import { Lighting } from './environment/Lighting.js';
+import { Skybox } from './environment/Skybox.js';
+import { EnemyManager } from './enemies/EnemyManager.js';
+import { EffectsManager } from './effects/EffectsManager.js';
+import { Minimap } from './effects/Minimap.js';
+import { PostPipeline } from './postprocessing/PostPipeline.js';
+
+export class Game {
+  constructor() {
+    this.running = false;
+    this.score = 0;
+    this.gameOver = false;
+
+    // Core
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x1a1a2e);
+
+    // Systems
+    this.input = new InputManager();
+    this.camera = new PlayerCamera(this);
+    this.renderer = new Renderer(this);
+    this.audio = new AudioManager(this.camera.camera);
+    this.player = new PlayerController(this);
+    this.weaponController = new WeaponController(this);
+    this.enemyManager = new EnemyManager(this);
+    this.effects = new EffectsManager(this.scene);
+
+    // Level
+    this.lighting = new Lighting(this.scene);
+    this.level = new Level(this.scene);
+    this.skybox = new Skybox(this.scene);
+
+    // Set camera reference in PlayerController
+    this.player.camera = this.camera;
+
+    // Clock
+    this.clock = new THREE.Clock();
+
+    // Game loop binding
+    this._boundLoop = this._loop.bind(this);
+
+    // Player alive state
+    this.player.alive = true;
+    this.player.maxHealth = 100;
+    this.player.health = 100;
+
+    // Health regen
+    this.healthRegenDelay = 3.0; // seconds after last hit before regen starts
+    this.healthRegenTimer = 0;
+    this.healthRegenRate = 15; // HP per second
+
+    // Minimap
+    this.minimap = new Minimap(this);
+
+    // Death animation
+    this._deathAnimActive = false;
+    this._deathAnimTimer = 0;
+    this._deathAnimDuration = 1.5;
+
+    // Post-processing (created after renderer is set up)
+    this.postPipeline = new PostPipeline(
+      this.renderer.renderer,
+      this.scene,
+      this.camera.camera
+    );
+  }
+
+  start() {
+    this.running = true;
+    this.clock.start();
+
+    // Initial enemy spawn
+    this.enemyManager.spawnEnemy();
+    this.enemyManager.spawnEnemy();
+
+    this._loop();
+  }
+
+  _loop() {
+    if (!this.running) return;
+    requestAnimationFrame(this._boundLoop);
+
+    const dt = Math.min(this.clock.getDelta(), 0.05); // Cap at 50ms
+
+    this._update(dt);
+    this._render();
+  }
+
+  _update(dt) {
+    // Hide/show UI based on pointer lock
+    const hud = document.getElementById('hud');
+    if (hud) {
+      hud.style.display = this.input.locked ? 'block' : 'none';
+    }
+
+    // Death animation (runs even when game is over)
+    if (this._deathAnimActive) {
+      this._deathAnimTimer += dt;
+      const t = Math.min(this._deathAnimTimer / this._deathAnimDuration, 1);
+      const baseY = 0;
+      this.camera.camera.position.y = baseY + (0.5 - 0.5 * Math.cos(t * Math.PI)) * 1.7;
+      this.camera.pitch += (-Math.PI / 6 - this.camera.pitch) * (1 - Math.exp(-3 * dt));
+      this.camera.camera.rotation.z = t * 0.3;
+      const hp = 1 - t;
+      document.getElementById('health-fill').style.width = (hp * 100) + '%';
+      document.getElementById('health-text').textContent = Math.ceil(hp * 100);
+      const di = document.getElementById('damage-indicator');
+      if (di) di.style.borderColor = `rgba(255,0,0,${t * 0.8})`;
+      if (t >= 1) {
+        this._deathAnimActive = false;
+        this._showGameOver();
+      }
+      return;
+    }
+
+    if (this.gameOver) return;
+
+    // Update player
+    this.player.update(dt);
+
+    // Update camera (consumes mouse delta internally)
+    this.camera.update(dt);
+
+    // Update weapons
+    this.weaponController.update(dt);
+
+    // Debug weapon position
+    this.weaponController.weaponGroup.position.set(0, 0, 0);
+
+    // Update enemies
+    this.enemyManager.update(dt);
+
+    // Update skybox
+    this.skybox.update(dt);
+
+    // Update effects
+    this.effects.update(dt);
+
+    // Health regen
+    const isRegenActive = this.healthRegenTimer >= this.healthRegenDelay;
+    if (this.player.health > 0 && this.player.health < this.player.maxHealth) {
+      this.healthRegenTimer += dt;
+      if (this.healthRegenTimer >= this.healthRegenDelay) {
+        this.player.health = Math.min(
+          this.player.maxHealth,
+          this.player.health + this.healthRegenRate * dt
+        );
+      }
+    }
+
+    // Update score display
+    document.getElementById('score-text').textContent = this.score;
+
+    // Update health display
+    const healthPct = Math.max(0, this.player.health / this.player.maxHealth);
+    document.getElementById('health-fill').style.width = (healthPct * 100) + '%';
+    document.getElementById('health-text').textContent = Math.ceil(this.player.health);
+
+    // Regen bar (shows when regen will start)
+    const regenBar = document.getElementById('regen-fill');
+    if (regenBar) {
+      if (isRegenActive && healthPct < 1) {
+        regenBar.style.width = '100%';
+      } else if (healthPct < 1) {
+        const regenProgress = this.healthRegenTimer / this.healthRegenDelay;
+        regenBar.style.width = (regenProgress * 100) + '%';
+      } else {
+        regenBar.style.width = '0%';
+      }
+    }
+
+    // Damage indicator & low health effect
+    const di = document.getElementById('damage-indicator');
+    if (di) {
+      di.classList.remove('hit');
+      if (healthPct < 0.3) {
+        const intensity = (1 - healthPct / 0.3) * 0.6;
+        di.style.borderColor = `rgba(255,0,0,${intensity})`;
+        di.style.borderWidth = '6px';
+      } else {
+        di.style.borderColor = 'transparent';
+        di.style.borderWidth = '4px';
+      }
+    }
+
+    // Update compass
+    this._updateCompass();
+
+    // Update minimap
+    this.minimap.update();
+  }
+
+  _updateCompass() {
+    const compass = document.getElementById('compass');
+    if (!compass) return;
+
+    const yaw = this.camera.yaw;
+    const deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360;
+
+    // Build compass once
+    if (!this._compassBuilt) {
+      this._compassBuilt = true;
+      this._compassStrip = document.createElement('div');
+      this._compassStrip.style.cssText = 'position:absolute;left:100px;transition:transform 0.05s;';
+      compass.appendChild(this._compassStrip);
+
+      const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      const pxPerDeg = 2;
+      for (let d = -180; d <= 180; d += 5) {
+        const tick = document.createElement('div');
+        if (d % 45 === 0) {
+          tick.className = 'compass-tick major';
+          const label = document.createElement('div');
+          label.className = 'compass-label';
+          const idx = ((d + 720) % 360) / 45;
+          label.textContent = dirs[Math.round(idx) % 8];
+          label.style.left = '0px';
+          tick.appendChild(label);
+        } else if (d % 10 === 0) {
+          tick.className = 'compass-tick';
+        } else continue;
+
+        tick.style.cssText += `position:absolute;left:${d * pxPerDeg + 360}px;`;
+        tick.style.width = '1px';
+        if (d % 45 === 0) tick.style.height = '10px';
+        else tick.style.height = '6px';
+        tick.style.background = d % 45 === 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)';
+        tick.style.top = d % 45 === 0 ? '0px' : '3px';
+        this._compassStrip.appendChild(tick);
+      }
+    }
+
+    // Just translate the strip
+    this._compassStrip.style.transform = `translateX(${-deg * 2 + 360}px)`;
+  }
+
+  _render() {
+    this.postPipeline.render();
+  }
+
+  addScore(points) {
+    this.score += points;
+  }
+
+  takeDamage(amount) {
+    if (this.player.health <= 0) return;
+
+    this.player.health -= amount;
+    this.healthRegenTimer = 0; // Reset regen delay
+
+    // Show damage indicator
+    const di = document.getElementById('damage-indicator');
+    if (di) {
+      di.classList.add('hit');
+      setTimeout(() => di.classList.remove('hit'), 200);
+    }
+
+    if (this.player.health <= 0) {
+      this.player.health = 0;
+      this._onDeath();
+    }
+  }
+
+  _onDeath() {
+    this.gameOver = true;
+    this._deathAnimActive = true;
+    this._deathAnimTimer = 0;
+    this.input.unlock();
+  }
+
+  _showGameOver() {
+    document.getElementById('final-score').textContent = this.score;
+    document.getElementById('final-kills').textContent = this.enemyManager.killCount;
+    document.getElementById('game-over').style.display = 'flex';
+  }
+
+  restart() {
+    // Reset player
+    this.player.health = this.player.maxHealth;
+    this.player.alive = true;
+    this.player.position.set(0, 0, 0);
+    this.player.velocity.set(0, 0, 0);
+    this.player.isGrounded = true;
+
+    // Reset camera
+    this.camera.yaw = 0;
+    this.camera.pitch = 0;
+    this.camera.currentFov = this.camera.baseFov;
+
+    // Reset score
+    this.score = 0;
+
+    // Reset enemies
+    this.enemyManager.reset();
+
+    // Reset effects
+    this.effects.reset();
+
+    // Reset weapons
+    this.weaponController.currentWeapon.ammo = this.weaponController.currentWeapon.stats.magSize;
+    this.weaponController.currentWeapon.stats.reserveAmmo = this.weaponController.currentWeapon.stats.magSize * 3;
+
+    // Reset UI
+    document.getElementById('hit-marker').classList.remove('show');
+    document.getElementById('hit-marker').style.opacity = '0';
+    document.getElementById('kill-feed').innerHTML = '';
+    document.getElementById('damage-indicator').classList.remove('hit');
+    document.getElementById('game-over').style.display = 'none';
+
+    this._deathAnimActive = false;
+    this._deathAnimTimer = 0;
+
+    this.gameOver = false;
+    this.running = true;
+
+    // Re-lock pointer
+    this.input.lock();
+
+    // Spawn initial enemies
+    this.enemyManager.spawnEnemy();
+    this.enemyManager.spawnEnemy();
+  }
+
+  stop() {
+    this.running = false;
+    this.input.dispose();
+    this.renderer.dispose();
+  }
+}

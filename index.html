@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DPSK OF DUTY</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+
+    #blocker {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      cursor: pointer;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    #blocker .content {
+      text-align: center;
+      color: #fff;
+    }
+    #blocker h1 {
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      color: #d4a017;
+      text-shadow: 0 0 40px rgba(212,160,23,0.3);
+      margin-bottom: 16px;
+    }
+    #blocker .subtitle {
+      font-size: 14px;
+      color: #888;
+      letter-spacing: 2px;
+      margin-bottom: 32px;
+    }
+    #blocker .start-btn {
+      display: inline-block;
+      padding: 14px 48px;
+      border: 2px solid #d4a017;
+      background: transparent;
+      color: #d4a017;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    #blocker .start-btn:hover {
+      background: #d4a017;
+      color: #000;
+    }
+    #blocker .controls-info {
+      margin-top: 32px;
+      font-size: 12px;
+      color: #555;
+      line-height: 1.8;
+    }
+    #blocker .controls-info span {
+      color: #888;
+    }
+
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 100;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #crosshair .dot {
+      width: 4px; height: 4px;
+      background: rgba(255,255,255,0.8);
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+    }
+    #crosshair .line {
+      position: absolute;
+      background: rgba(255,255,255,0.6);
+    }
+    #crosshair .line.top { top: 2px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; }
+    #crosshair .line.bottom { bottom: 2px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; }
+    #crosshair .line.left { left: 2px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; }
+    #crosshair .line.right { right: 2px; top: 50%; transform: translateY(-50%); width: 8px; height: 2px; }
+
+    #health-bar {
+      position: absolute;
+      bottom: 60px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #health-bar .health-icon {
+      font-size: 20px;
+      color: #ff3333;
+    }
+    #health-bar .health-fill-wrap {
+      width: 140px; height: 6px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #health-bar .health-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff3333, #ff6666);
+      border-radius: 3px;
+      transition: width 0.2s;
+    }
+    #health-bar .regen-fill {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      background: rgba(255,255,255,0.15);
+      border-radius: 3px;
+      transition: width 0.05s;
+      pointer-events: none;
+    }
+    #health-text {
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      min-width: 32px;
+    }
+
+    #ammo-display {
+      position: absolute;
+      bottom: 60px; right: 60px;
+      text-align: right;
+      color: #fff;
+    }
+    #ammo-display .ammo-count {
+      font-size: 36px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    #ammo-display .ammo-max {
+      font-size: 18px;
+      color: #888;
+      font-weight: 400;
+    }
+    #ammo-display .ammo-type {
+      font-size: 11px;
+      color: #666;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Compass */
+    #compass {
+      position: absolute;
+      bottom: 90px; left: 50%;
+      transform: translateX(-50%);
+      width: 200px; height: 12px;
+      opacity: 0.5;
+    }
+    #compass .compass-bg {
+      width: 100%; height: 2px;
+      background: rgba(255,255,255,0.3);
+      position: absolute;
+      top: 50%; transform: translateY(-50%);
+    }
+    #compass .compass-tick {
+      position: absolute;
+      width: 1px; height: 6px;
+      background: rgba(255,255,255,0.4);
+      top: 3px;
+    }
+    #compass .compass-tick.major {
+      height: 10px;
+      background: rgba(255,255,255,0.7);
+      top: 0;
+    }
+    #compass .compass-label {
+      position: absolute;
+      font-size: 9px;
+      color: rgba(255,255,255,0.6);
+      top: -12px;
+      letter-spacing: 1px;
+    }
+    #compass .compass-center {
+      position: absolute;
+      left: 50%; top: 0;
+      width: 2px; height: 12px;
+      background: #d4a017;
+      transform: translateX(-50%);
+    }
+
+    #kill-feed {
+      position: absolute;
+      top: 80px; right: 20px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: right;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    #kill-feed .kill-entry {
+      opacity: 0;
+      transition: opacity 0.3s;
+      margin-bottom: 4px;
+    }
+    #kill-feed .kill-entry.show { opacity: 1; }
+    #kill-feed .kill-entry .headshot { color: #ff4444; }
+
+    #hit-marker {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity 0.05s;
+    }
+    #hit-marker.show { opacity: 1; }
+    #hit-marker svg { width: 40px; height: 40px; }
+
+    #damage-indicator {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border: 4px solid transparent;
+      transition: border-color 0.1s;
+      border-radius: 2px;
+    }
+    #damage-indicator.hit {
+      border-color: rgba(255,0,0,0.5);
+    }
+
+    #score-display {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      opacity: 0.8;
+    }
+
+    #game-over {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    #game-over .content {
+      text-align: center;
+      color: #fff;
+    }
+    #game-over h1 {
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      color: #ff3333;
+      margin-bottom: 8px;
+    }
+    #game-over .final-score {
+      font-size: 18px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    #game-over .final-kills {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 24px;
+    }
+    #game-over .restart-btn {
+      padding: 12px 36px;
+      border: 2px solid #fff;
+      background: transparent;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s;
+      pointer-events: all;
+    }
+    #game-over .restart-btn:hover {
+      background: #fff;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="blocker">
+    <div class="content">
+      <h1>DPSK OF DUTY</h1>
+      <div class="subtitle">MODERN WARFARE</div>
+      <button class="start-btn" id="start-btn">PLAY</button>
+      <div class="controls-info">
+        <span>W A S D</span> — Move &nbsp;|&nbsp; <span>LMB</span> — Fire &nbsp;|&nbsp; <span>R</span> — Reload<br>
+        <span>SHIFT</span> — Sprint &nbsp;|&nbsp; <span>SPACE</span> — Jump &nbsp;|&nbsp; <span>CTRL</span> — Crouch<br>
+        <span>RIGHT CLICK</span> — Aim Down Sights &nbsp;|&nbsp; <span>1/2</span> — Switch Weapon
+      </div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="crosshair">
+      <div class="dot"></div>
+      <div class="line top"></div>
+      <div class="line bottom"></div>
+      <div class="line left"></div>
+      <div class="line right"></div>
+    </div>
+
+    <div id="compass">
+      <div class="compass-bg"></div>
+      <div class="compass-center"></div>
+    </div>
+
+    <div id="health-bar">
+      <div class="health-icon">✦</div>
+      <div class="health-fill-wrap">
+        <div class="health-fill" id="health-fill" style="width:100%"></div>
+        <div class="regen-fill" id="regen-fill" style="width:0%"></div>
+      </div>
+      <div id="health-text">100</div>
+    </div>
+
+    <div id="ammo-display">
+      <div><span class="ammo-count" id="ammo-current">30</span><span class="ammo-max"> / <span id="ammo-reserve">90</span></span></div>
+      <div class="ammo-type">5.56mm</div>
+    </div>
+
+    <div id="kill-feed"></div>
+
+    <div id="hit-marker">
+      <svg viewBox="0 0 40 40">
+        <line x1="12" y1="12" x2="28" y2="28" stroke="white" stroke-width="2"/>
+        <line x1="28" y1="12" x2="12" y2="28" stroke="white" stroke-width="2"/>
+        <circle cx="20" cy="20" r="6" fill="none" stroke="white" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <div id="damage-indicator"></div>
+
+    <div id="score-display">SCORE: <span id="score-text">0</span></div>
+  </div>
+
+  <div id="game-over">
+    <div class="content">
+      <h1>KIA</h1>
+      <div class="final-score">FINAL SCORE: <span id="final-score">0</span></div>
+      <div class="final-kills">ENEMIES ELIMINATED: <span id="final-kills">0</span></div>
+      <button class="restart-btn" id="restart-btn">TRY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
