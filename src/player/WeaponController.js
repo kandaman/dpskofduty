@@ -126,15 +126,16 @@ export class WeaponController {
     const spreadX = (Math.random() - 0.5) * spread;
     const spreadY = (Math.random() - 0.5) * spread;
 
-    // Direction with spread
-    const dir = new THREE.Vector3(0, 0, -1);
-    const euler = new THREE.Euler(
-      camera.rotation.x + spreadY,
-      camera.rotation.y + spreadX,
-      camera.rotation.z,
-      camera.rotation.order
-    );
-    dir.applyEuler(euler);
+    // Direction with spread — use quaternion to avoid gimbal lock when
+    // camera.rotation.order ('XYZ') differs from the camera Euler order ('YXZ')
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    // Apply spread as local-axis rotations
+    if (spread !== 0) {
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      dir.applyAxisAngle(right, spreadY);
+      dir.applyAxisAngle(up, spreadX);
+    }
 
     raycaster.set(camera.position, dir);
     raycaster.far = 200;

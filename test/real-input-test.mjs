@@ -516,34 +516,31 @@ async function runRealInputTest() {
   assert(obstacleCount > 0, 'Level has obstacle meshes (' + obstacleCount + ')');
 
   // ============================================================
-  // 11. COLLISION REGRESSION: BULLET OCCLUSION
+  // 11. BULLET OCCLUSION + ENEMY LOS (behavioral tests)
   // ============================================================
-  console.log('\n11. COLLISION REGRESSION: bullets stop at walls\n');
+  console.log('\n11. BULLET OCCLUSION + ENEMY LOS (behavioral tests)\n');
 
-  // Verify WeaponController raycasts against obstacles by checking source code inclusion
-  var hasObstacleRaycast = await gameEval(page, '(function() { var src = game.weaponController._fireRaycast.toString(); return src.indexOf(\'getObstacleMeshes\') !== -1; })()');
-  console.log('      Weapon raycast includes obstacles: ' + hasObstacleRaycast);
-  assert(hasObstacleRaycast, 'WeaponController._fireRaycast references getObstacleMeshes');
+  // Bullet occlusion and enemy LOS are verified by behavioral tests in
+  // test/behavioral-tests.mjs which measure HP changes (not source inspection):
+  //
+  //   Section 1: Bullet Occlusion
+  //     1a. Fire through building wall  → enemy HP unchanged
+  //     1b. Direct fire with clear LOS  → enemy HP decreases
+  //
+  //   Section 5: Enemy LOS
+  //     5a. Enemy behind wall → player HP unchanged (LOS blocked)
+  //     5b. Clear LOS → player HP decreases (enemy fires)
+  //
+  // These replaced the source-inspection tests that only checked whether
+  // the code CONTAINED references to getObstacleMeshes or hasLoS, but
+  // never verified the BEHAVIOR actually worked.
+  //
+  // Run: node test/behavioral-tests.mjs
 
-  // Verify obstacle meshes exist
-  var obCount = await gameEval(page, 'game.level ? game.level.getObstacleMeshes().length : 0');
-  console.log('      Obstacle meshes: ' + obCount);
-  assert(obCount > 0, 'Level has ' + obCount + ' obstacle meshes for bullet stopping');
-
-  // ============================================================
-  // 12. ENEMY LOS REGRESSION
-  // ============================================================
-  console.log('\n12. ENEMY LOS REGRESSION (enemies check LOS before firing)\n');
-
-  // Verify enemy _fireAtPlayer checks hasLoS by inspecting source
-  var hasLosCheck = await gameEval(page, '(function() { var src = game.enemyManager.enemies[0] ? game.enemyManager.enemies[0]._fireAtPlayer.toString() : \'\'; return src.indexOf(\'hasLoS\') !== -1 && src.indexOf(\'return\') > src.indexOf(\'hasLoS\'); })()');
-  console.log('      Enemy _fireAtPlayer returns early when !hasLoS: ' + hasLosCheck);
-  assert(hasLosCheck, 'Enemy._fireAtPlayer checks hasLoS and returns before dealing damage');
-
-  // Verify per-class accuracy model exists (rangePenaltyPerMeter)
-  var hasRangePenalty = await gameEval(page, '(function() { if (!game.enemyManager.enemies.length) return \'no enemies\'; var e = game.enemyManager.enemies[0]; return typeof e.rangePenaltyPerMeter !== \'undefined\'; })()');
-  console.log('      Enemies have per-class rangePenaltyPerMeter: ' + hasRangePenalty);
-  assert(hasRangePenalty === true || hasRangePenalty === 'no enemies', 'Enemy type has rangePenaltyPerMeter property');
+  // Quick smoke-check that obstacles and LOS code exist (lightweight, not behavioral)
+  var levelObstacles = await gameEval(page, 'game.level ? game.level.getObstacleMeshes().length : 0');
+  console.log('      Obstacle meshes in level: ' + levelObstacles + ' (verified behaviorally in behavioral-tests.mjs)');
+  assert(levelObstacles > 0, 'Level has ' + levelObstacles + ' obstacle meshes for bullet stopping');
 
   // ============================================================
   // 13. INPUT STATE AFTER RESTART

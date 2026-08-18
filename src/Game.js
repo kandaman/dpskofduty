@@ -341,6 +341,8 @@ export class Game {
     // Reset camera
     this.camera.yaw = 0;
     this.camera.pitch = 0;
+    this.camera.velocity.yaw = 0;
+    this.camera.velocity.pitch = 0;
     this.camera.currentFov = this.camera.baseFov;
 
     // Reset score
