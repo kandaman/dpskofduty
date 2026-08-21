@@ -1,0 +1,51 @@
+{
+  "run": 1,
+  "label": "Run1",
+  "startTime": 1787278289946,
+  "duration": 206.767,
+  "reachedVictory": true,
+  "deaths": 0,
+  "kills": 29,
+  "minPlayerHp": 87.77133320095739,
+  "damageReceived": 14.771474063867402,
+  "reloadCount": 6,
+  "ammoPickups": 0,
+  "crateAttempts": 0,
+  "lastCratePos": null,
+  "waveTimes": {
+    "1": {
+      "start": 1787278295378,
+      "end": 1787278322774,
+      "duration": "27.4"
+    },
+    "2": {
+      "start": 1787278326406,
+      "end": 1787278355477,
+      "duration": "29.1"
+    },
+    "3": {
+      "start": 1787278361070,
+      "end": 1787278396275,
+      "duration": "35.2"
+    },
+    "4": {
+      "start": 1787278400917,
+      "end": 1787278443803,
+      "duration": "42.9"
+    },
+    "5": {
+      "start": 1787278447610,
+      "end": 1787278480022,
+      "duration": "32.4"
+    },
+    "6": {
+      "start": 1787278486361,
+      "end": 1787278500625,
+      "duration": "14.3"
+    }
+  },
+  "wavesCompleted": 6,
+  "runtimeErrors": [],
+  "ammoLeft": 5,
+  "reserveLeft": 1560
+}

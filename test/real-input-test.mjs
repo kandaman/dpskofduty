@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const URL = 'http://localhost:5173';
+const URL = 'http://localhost:3005';
 const SCREENSHOT_DIR = path.resolve('test/real-input-screenshots');
 const DT_CAP = 0.5;
 
@@ -453,19 +453,24 @@ async function runRealInputTest() {
   // ============================================================
   console.log('\n9. SPRINT VIA REAL INPUT (Shift+W)\n');
   await resetPlayer(0);
-  // Walk first (sans shift), measure distance
+  // Walk first (sans shift) — 4 frames for reliable game-time at 2fps
   var p0_walk = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
-  await holdKey('w', 3000);
+  await page.keyboard.down('w');
+  await waitForGameFrames(page, 4, 4000);
+  await page.keyboard.up('w');
+  await waitForGameFrames(page, 1, 2000);
   var p1_walk = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
   var walkDist = getDelta(p0_walk, p1_walk).dist;
-  console.log('      Walk-only distance (3s): ' + walkDist.toFixed(2));
+  console.log('      Walk-only distance (4 frames): ' + walkDist.toFixed(2));
 
-  // Now sprint
+  // Now sprint — same frame count for fair comparison
   await resetPlayer(0);
   var p0_sprint = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
+  // Press Shift before W to ensure sprint is active on first W frame
   await page.keyboard.down('ShiftLeft');
+  await sleep(100);
   await page.keyboard.down('w');
-  await waitForGameFrames(page, 2, 3000);
+  await waitForGameFrames(page, 4, 4000);
   await page.keyboard.up('w');
   await page.keyboard.up('ShiftLeft');
   await waitForGameFrames(page, 1, 2000);

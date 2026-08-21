@@ -1,0 +1,25 @@
+{
+  "runs": [
+    {
+      "run": 1,
+      "kills": 3,
+      "score": 300,
+      "wave2": true,
+      "finalWave": 2
+    },
+    {
+      "run": 2,
+      "kills": 3,
+      "score": 300,
+      "wave2": true,
+      "finalWave": 2
+    },
+    {
+      "run": 3,
+      "kills": 3,
+      "score": 300,
+      "wave2": true,
+      "finalWave": 2
+    }
+  ]
+}

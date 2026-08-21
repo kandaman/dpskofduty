@@ -50,13 +50,19 @@ export class AmmoPickup {
   }
 
   spawn() {
-    // Place at a random position on the map
+    // Place at a random position on the map, near the player
+    var px = 0, pz = 0;
+    if (this.game && this.game.player) {
+      px = this.game.player.position.x;
+      pz = this.game.player.position.z;
+    }
     const angle = Math.random() * Math.PI * 2;
-    const dist = 5 + Math.random() * 12;
+    const dist = 5 + Math.random() * 8; // 5-13 units from player (was 5-17 from origin)
+    const bound = 17; // leave 2-unit margin from map edge (±19)
     this.mesh.position.set(
-      Math.cos(angle) * dist,
+      Math.max(-bound, Math.min(bound, px + Math.cos(angle) * dist)),
       0,
-      Math.sin(angle) * dist
+      Math.max(-bound, Math.min(bound, pz + Math.sin(angle) * dist))
     );
     this.mesh.visible = true;
     this.active = true;
@@ -99,7 +105,7 @@ export class AmmoPickup {
     // Check proximity to player for auto-collection
     if (playerPos && this.active) {
       const dist = playerPos.distanceTo(this.mesh.position);
-      if (dist < 1.5) {
+      if (dist < 3.0) {
         this.collect(this.game?.weaponController);
       }
     }

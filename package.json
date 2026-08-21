@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:phase3": "node test/phase3-acceptance.mjs"
   },
   "dependencies": {
     "three": "^0.170.0",

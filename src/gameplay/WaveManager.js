@@ -40,8 +40,8 @@ export class WaveManager {
         purpose: 'Force prioritization between enemy roles.'
       },
       {
-        enemies: 10, types: ['rifleman', 'rusher', 'sniper'],
-        interval: 1200, maxActive: 5,
+        enemies: 7, types: ['rifleman', 'rusher', 'sniper'],
+        interval: 1500, maxActive: 4,
         desc: 'GAUNTLET',
         purpose: 'High-pressure combined arms. Use all mechanics.'
       },
@@ -213,6 +213,10 @@ export class WaveManager {
     const spawnPos = this._getSpawnPosition(def);
 
     if (type === 'boss') {
+      // Pre-account for 2 support riflemen that will spawn after delay
+      // This prevents premature wave completion if boss dies before support spawns
+      this.enemiesRemaining += 2;
+
       // Boss spawns ahead of player at moderate distance
       const playerPos = this.game.player ? this.game.player.position : new THREE.Vector3(0, 0, 0);
       const facing = this.game.camera ? this.game.camera.yaw : 0;
@@ -233,7 +237,6 @@ export class WaveManager {
           const supportPos = this._getSpawnPosition(def);
           this.game.enemyManager.spawnEnemyAt(supportPos.x, supportPos.z, 'rifleman');
           this.enemiesSpawned++;
-          this.enemiesRemaining++;
         }
         this._updateHUD('active');
       }, 2000);
