@@ -511,8 +511,8 @@ async function runBehavioralTests() {
   console.log('\n   --- 5b: Clear LOS: player should take damage from enemy ---');
   // Fully disable wave spawning WITHOUT setting state="victory" (victory may stop game processing)
   await gameEval(page, '(function(){var wm=window.game.waveManager;if(wm){wm.spawnQueue=[];wm.spawnTimer=99999;}})()');
-  // Use rusher (no cover-seeking AI). Place at 5m distance for reliable hit rate.
-  await gameEval(page, '(function(){var em=game.enemyManager;em.reset();var e=em.spawnEnemyAt(-7,-1,"rusher");e.position.set(-7,0,-1);e.state="combat";e.moveSpeed=0;e.acceleration=0;})()');
+  // Use rusher (no cover-seeking AI, high damage). Place at 5m distance for reliable hit rate.
+  await gameEval(page, '(function(){var em=game.enemyManager;em.reset();var e=em.spawnEnemyAt(-7,-1,"rusher");e.position.set(-7,0,-1);e.state="combat";e.moveSpeed=0;e.acceleration=0;e.telemetry={shotsAttempted:0,hits:0,damageDealt:0};})()');
   await waitForGameFrames(page, 5, 5000);
 
   await page.evaluate(function() {
@@ -531,23 +531,25 @@ async function runBehavioralTests() {
   var playerHpClearBefore = await gameEval(page, 'game.player.health');
   console.log('   Player HP at start (clear LOS): ' + playerHpClearBefore);
 
-  // Directly call enemy._fireAtPlayer multiple times to bypass regen > dmg rate
-  // Enemy damage=3, hitChance=0.33. 50 direct calls at 33% hit = ~16.5 hits @3dmg = ~50dmg
-  for (var fi = 0; fi < 50; fi++) {
-    await gameEval(page, '(function(){var e=game.enemyManager.enemies[0];if(e){e._fireAtPlayer(5,true);}})()');
-    await waitForGameFrames(page, 1, 2000);
-  }
+  // Wait for enemy to naturally fire in its update loop.
+  // Rusher: fireRate=400-600ms, damage=15, baseHitChance=0.55 at 5m.
+  // At ~2fps (500ms/frame), each frame = ~1 fire cycle.
+  // Wait 15 frames for ~15 attempts at 55% hit = ~8 hits = ~120 damage.
+  // Health regen never starts because damage is continuous.
+  await waitForGameFrames(page, 15, 20000);
+
+  // Read telemetry to verify natural firing occurred
+  var telemetry = await gameEval(page, '(function(){var e=game.enemyManager.enemies[0];return e?{shots:e.telemetry.shotsAttempted,hits:e.telemetry.hits,dmg:e.telemetry.damageDealt.toFixed(1)}:null;})()');
+  console.log('   Enemy telemetry: ' + JSON.stringify(telemetry));
 
   var playerHpClearAfter = await gameEval(page, 'game.player.health');
   console.log('   Player HP after enemy fire (clear LOS): ' + playerHpClearAfter);
 
-  // Diagnostic only — no fallback that creates the pass condition
-  if (playerHpClearAfter >= playerHpClearBefore) {
-    var diag = await gameEval(page, '(function(){var e=game.enemyManager.enemies[0];if(!e)return"no enemy";return{fireTimer:e.fireTimer,state:e.state,posX:e.position.x.toFixed(1),posZ:e.position.z.toFixed(1),hasLoS:e._hasLineOfSight(game.player.position),gamePlayerExists:!!e.game.player};})()');
-    console.log('   [DIAGNOSTIC - NOT a fallback] Enemy state: ' + JSON.stringify(diag));
-  }
+  var dmgTaken = playerHpClearBefore - playerHpClearAfter;
+  assert(dmgTaken > 0, 'Player HP decreased from enemy fire with clear LOS (HP: ' + playerHpClearBefore + ' -> ' + playerHpClearAfter + ', dmg=' + dmgTaken.toFixed(1) + ')');
 
-  assert(playerHpClearAfter < playerHpClearBefore, 'Player HP decreased from enemy fire with clear LOS (HP: ' + playerHpClearBefore + ' -> ' + playerHpClearAfter + ')');
+  // Also assert that at least one natural hit occurred (telemetry confirms natural behavior)
+  assert(telemetry && telemetry.hits > 0, 'Enemy naturally fired and hit at least once (shots=' + (telemetry ? telemetry.shots : '?') + ', hits=' + (telemetry ? telemetry.hits : '?') + ')');
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'enemy-los-clear.png') });
 
   // ============================================================

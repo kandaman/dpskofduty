@@ -30,3 +30,9 @@ yarn-error.log*
 
 # Claude settings (local overrides only - not template configs)
 .claude/settings.local.json
+
+# Test artifacts (generated screenshots and results)
+test/*-screenshots/
+test/results/
+test-results/
+.claude/scheduled_tasks.lock

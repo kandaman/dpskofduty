@@ -40,8 +40,8 @@ export class WaveManager {
         purpose: 'Force prioritization between enemy roles.'
       },
       {
-        enemies: 7, types: ['rifleman', 'rusher', 'sniper'],
-        interval: 1500, maxActive: 4,
+        enemies: 10, types: ['rifleman', 'rusher', 'sniper'],
+        interval: 1200, maxActive: 5,
         desc: 'GAUNTLET',
         purpose: 'High-pressure combined arms. Use all mechanics.'
       },

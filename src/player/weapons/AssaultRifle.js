@@ -5,10 +5,10 @@ export class AssaultRifle {
     this.game = game;
     this.stats = {
       name: 'M4A1',
-      damage: 100, // PHASE 3: 100 = 1-body-shot kill, 200 headshot, for 2fps speed
+      damage: 28,
       fireRate: 750,
       magSize: 30,
-      reserveAmmo: 1500, // PHASE 3: increased for 2fps spray-fire + ammo crate margin
+      reserveAmmo: 360,
       reloadTime: 2100,
       recoilPitch: 0.04,
       recoilYaw: 0.02,

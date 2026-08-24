@@ -55,6 +55,9 @@ export class WeaponController {
     // Hit markers
     this.hitMarkerTimer = 0;
 
+    // Telemetry (observational only)
+    this.telemetry = { shotsFired: 0, hits: 0, headshots: 0, damageDealt: 0 };
+
     this._initWeapons();
   }
 
@@ -115,6 +118,9 @@ export class WeaponController {
     // ADS reset
     this.isFiring = true;
     this.fireTimer = 0;
+
+    // Telemetry
+    this.telemetry.shotsFired++;
   }
 
   _fireRaycast() {
@@ -147,10 +153,11 @@ export class WeaponController {
     }
 
     const enemies = this.game.enemyManager ? this.game.enemyManager.enemies : [];
-    // Collect all descendant Meshes (skip Sprites like health bars to avoid
-    // THREE.js Sprite.raycast crash when raycaster.camera is null)
+    // Collect descendant Meshes from ALIVE enemies only (dead enemies are excluded
+    // so raycast hits are only counted against live targets, not corpses).
     const enemyMeshes = [];
     for (const e of enemies) {
+      if (!e.alive) continue;
       e.mesh.traverse(child => { if (child.isMesh) enemyMeshes.push(child); });
     }
 
@@ -210,6 +217,11 @@ export class WeaponController {
         }
 
         const killed = enemy.takeDamage(damage);
+
+        // Telemetry
+        this.telemetry.hits++;
+        this.telemetry.damageDealt += damage;
+        if (isHeadshot) this.telemetry.headshots++;
 
         // Hit marker
         this._showHitMarker(isHeadshot);

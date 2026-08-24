@@ -27,11 +27,6 @@ export class Enemy {
     // Type-specific defaults
     this._applyTypeDefaults(type);
 
-    // PHASE 3 BALANCE: reduce damage & hit chance for 2fps headless viability
-    // (behavioral tests check directionality, not absolute values, so safe)
-    this.damage = Math.max(1, Math.floor(this.damage * 0.25));
-    this.baseHitChance = Math.min(0.45, this.baseHitChance * 0.6);
-
     // Patrol
     this.patrolTarget = this._randomPatrolPoint();
     this.patrolWaitTime = 0;
@@ -61,6 +56,9 @@ export class Enemy {
     // Telegraphing
     this.aimWarningActive = false;
     this.aimWarningTimer = 0;
+
+    // Telemetry (observational only — does not affect gameplay)
+    this.telemetry = { shotsAttempted: 0, hits: 0, damageDealt: 0 };
 
     // Mesh
     this.mesh = this._createMesh();
@@ -882,14 +880,19 @@ export class Enemy {
     let hitChance = this.baseHitChance - rangePenalty;
     hitChance = Math.max(0.05, Math.min(0.95, hitChance));
 
+    this.telemetry.shotsAttempted++;
+
     // Roll for hit
     if (Math.random() > hitChance) return;
 
-    // Single shot (synchronous for headless stability — setTimeout(0) races at 2fps)
-    const burstCount = 1;
+    this.telemetry.hits++;
+
+    // Burst fire: 1-2 rounds per fire cycle (frame-rate independent, no wall-clock setTimeout)
+    const burstCount = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < burstCount; i++) {
       if (!this.alive || !this.game.player || this.game.player.health <= 0) continue;
       const damage = this.damage * (0.8 + Math.random() * 0.4);
+      this.telemetry.damageDealt += damage;
       this.game.takeDamage(damage);
       this.game.camera.addShake(0.3);
       this.game.audio.playProcedural('impact', { volume: 0.15, duration: 0.05 });

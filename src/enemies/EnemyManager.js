@@ -6,6 +6,7 @@ export class EnemyManager {
     this.game = game;
     this.enemies = [];
     this.killCount = 0;
+    this.killCounts = { rifleman: 0, rusher: 0, sniper: 0, boss: 0 };
     this.obstacles = [];
   }
 
@@ -35,6 +36,7 @@ export class EnemyManager {
         this.game.scene.remove(enemy.mesh);
         this.enemies.splice(i, 1);
         this.killCount++;
+        if (this.killCounts[enemy.type] !== undefined) this.killCounts[enemy.type]++;
 
         // Notify wave manager
         if (this.game.waveManager) {
@@ -54,5 +56,6 @@ export class EnemyManager {
     }
     this.enemies = [];
     this.killCount = 0;
+    this.killCounts = { rifleman: 0, rusher: 0, sniper: 0, boss: 0 };
   }
 }
