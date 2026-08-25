@@ -1,23 +1,62 @@
 {
   "run": 2,
   "label": "Run2",
-  "startTime": 1787588572258,
-  "duration": 0,
-  "reachedVictory": false,
+  "startTime": 1787615641231,
+  "duration": 137.379,
+  "reachedVictory": true,
   "deaths": 0,
-  "kills": 0,
-  "minPlayerHp": 100,
-  "damageReceived": 0,
+  "kills": 32,
+  "minPlayerHp": 4.865500000715256,
+  "damageReceived": 287.7028089844381,
   "reloadCount": 0,
   "ammoPickups": 0,
   "crateAttempts": 0,
   "lastCratePos": null,
-  "waveTimes": {},
-  "wavesCompleted": 0,
-  "shotsFired": 0,
-  "hits": 0,
-  "headshots": 0,
-  "damageDealt": 0,
-  "killsByType": {},
-  "runtimeErrors": []
+  "waveTimes": {
+    "1": {
+      "start": 1787615644771,
+      "end": 1787615656997,
+      "duration": "12.2"
+    },
+    "2": {
+      "start": 1787615669377,
+      "end": 1787615674927,
+      "duration": "5.5"
+    },
+    "3": {
+      "start": 1787615687174,
+      "end": 1787615699084,
+      "duration": "11.9"
+    },
+    "4": {
+      "start": 1787615711105,
+      "end": 1787615721987,
+      "duration": "10.9"
+    },
+    "5": {
+      "start": 1787615734338,
+      "end": 1787615750258,
+      "duration": "15.9"
+    },
+    "6": {
+      "start": 1787615762997,
+      "end": 1787615769955,
+      "duration": "7.0"
+    }
+  },
+  "wavesCompleted": 6,
+  "shotsFired": 300,
+  "hits": 63,
+  "headshots": 62,
+  "damageDealt": 3500,
+  "killsByType": {
+    "rifleman": 16,
+    "rusher": 9,
+    "sniper": 6,
+    "boss": 1
+  },
+  "runtimeErrors": [],
+  "_diagCount": 3,
+  "ammoLeft": 30,
+  "reserveLeft": 9999
 }

@@ -127,8 +127,10 @@ export class Game {
       this.camera.pitch += (-Math.PI / 6 - this.camera.pitch) * (1 - Math.exp(-3 * dt));
       this.camera.camera.rotation.z = t * 0.3;
       const hp = 1 - t;
-      document.getElementById('health-fill').style.width = (hp * 100) + '%';
-      document.getElementById('health-text').textContent = Math.ceil(hp * 100);
+      var hf = document.getElementById('health-fill');
+      var ht = document.getElementById('health-text');
+      if (hf) hf.style.width = (hp * 100) + '%';
+      if (ht) ht.textContent = Math.ceil(hp * 100);
       const di = document.getElementById('damage-indicator');
       if (di) di.style.borderColor = `rgba(255,0,0,${t * 0.8})`;
       if (t >= 1) {
@@ -303,16 +305,21 @@ export class Game {
   }
 
   _showGameOver() {
-    document.getElementById('final-score').textContent = this.score;
-    document.getElementById('final-kills').textContent = this.enemyManager.killCount;
-    document.getElementById('game-over').style.display = 'flex';
+    var fs = document.getElementById('final-score');
+    var fk = document.getElementById('final-kills');
+    if (fs) fs.textContent = this.score;
+    if (fk) fk.textContent = this.enemyManager.killCount;
+    var go = document.getElementById('game-over');
+    if (go) go.style.display = 'flex';
   }
 
   _showVictory() {
-    document.getElementById('final-score').textContent = this.score;
-    document.getElementById('final-kills').textContent = this.enemyManager.killCount;
-    document.getElementById('wave-announce').textContent = 'MISSION COMPLETE';
-    document.getElementById('wave-announce').style.opacity = '1';
+    var fs = document.getElementById('final-score');
+    var fk = document.getElementById('final-kills');
+    if (fs) fs.textContent = this.score;
+    if (fk) fk.textContent = this.enemyManager.killCount;
+    var wa = document.getElementById('wave-announce');
+    if (wa) { wa.textContent = 'MISSION COMPLETE'; wa.style.opacity = '1'; }
 
     const hud = document.getElementById('hud');
     if (hud) {
@@ -363,12 +370,15 @@ export class Game {
     weapon.ammo = weapon.stats.magSize;
     weapon.stats.reserveAmmo = 360;
 
-    // Reset UI
-    document.getElementById('hit-marker').classList.remove('show');
-    document.getElementById('hit-marker').style.opacity = '0';
-    document.getElementById('kill-feed').innerHTML = '';
-    document.getElementById('damage-indicator').classList.remove('hit');
-    document.getElementById('game-over').style.display = 'none';
+    // Reset UI — guard against null if HUD was replaced (e.g. after victory)
+    var hm = document.getElementById('hit-marker');
+    if (hm) { hm.classList.remove('show'); hm.style.opacity = '0'; }
+    var kf = document.getElementById('kill-feed');
+    if (kf) kf.innerHTML = '';
+    var di = document.getElementById('damage-indicator');
+    if (di) di.classList.remove('hit');
+    var go = document.getElementById('game-over');
+    if (go) go.style.display = 'none';
 
     this._deathAnimActive = false;
     this._deathAnimTimer = 0;

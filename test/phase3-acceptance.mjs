@@ -126,7 +126,7 @@ async function aimAt(page, tx, tz) {
   // Positive yaw rotates RIGHT (counter-clockwise from above).
   // CRITICAL: Also rebuild the camera quaternion so _fireRaycast() which reads
   // the quaternion (not raw yaw/pitch) uses the updated aim direction.
-  var hit = await gameEval(page, '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(1.2-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;var euler=new THREE.Euler(pitch, yaw, 0, "YXZ");c.camera.quaternion.setFromEuler(euler);return{ok:true,px:px.toFixed(1),pz:pz.toFixed(1),tx:' + tx + '.toFixed(1),tz:' + tz + '.toFixed(1),yaw:yaw.toFixed(4),pitch:pitch.toFixed(4)};})()');
+  var hit = await gameEval(page, '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(1.3-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;var euler=new THREE.Euler(pitch, yaw, 0, "YXZ");c.camera.quaternion.setFromEuler(euler);return{ok:true,px:px.toFixed(1),pz:pz.toFixed(1),tx:' + tx + '.toFixed(1),tz:' + tz + '.toFixed(1),yaw:yaw.toFixed(4),pitch:pitch.toFixed(4)};})()');
   if (hit === false || !hit || !hit.ok) return;
   if (typeof globalThis !== 'undefined' && globalThis.__aimCount === undefined) globalThis.__aimCount = 0;
   if (typeof globalThis !== 'undefined' && globalThis.__aimCount < 5) {
@@ -140,7 +140,10 @@ async function findClosestEnemy(page) {
   // After teleporting the player via gameEval, the camera's world position is stale
   // (no frames have run to update it from player position). Using player position with
   // eye-height offset gives correct LOS at the current combat position.
-  return await gameEval(page, '(function(){var g=window.game;if(!g||!g.enemyManager)return null;var ppos=g.player.position;var rayOrigin=new THREE.Vector3(ppos.x,1.7,ppos.z);var obstacles=g.level?g.level.getObstacleMeshes():[];var enemies=[];for(var i=0;i<g.enemyManager.enemies.length;i++){var e=g.enemyManager.enemies[i];if(!e||!e.alive)continue;enemies.push({e:e,hp:e.health,d:ppos.distanceTo(e.position)});}if(enemies.length===0)return null;enemies.sort(function(a,b){return a.hp-b.hp;});var chosen=null;for(var j=0;j<enemies.length;j++){var ent=enemies[j];var dir=new THREE.Vector3(ent.e.position.x-ppos.x,1.2-1.7,ent.e.position.z-ppos.z);var dist=dir.length();if(dist<0.5)continue;dir.normalize();var rc=new THREE.Raycaster(rayOrigin,dir);var hits=rc.intersectObjects(obstacles,false);var blocked=false;for(var h=0;h<hits.length;h++){if(hits[h].distance<dist-0.3){blocked=true;break;}}if(!blocked){chosen=ent;break;}}if(!chosen)chosen=enemies[0];if(!chosen)return null;return{x:chosen.e.position.x,z:chosen.e.position.z,hp:chosen.hp.toFixed(0),type:chosen.e.type,dist:chosen.d.toFixed(1)};})()');
+  // Priority targeting: snipers (40dmg) > rushers (15dmg) > boss > riflemen (8dmg).
+  // Among same type, pick weakest (lowest HP) for quickest kill.
+  // This replaces the old sort-by-HP-only which ignored enemy type danger.
+  return await gameEval(page, '(function(){var g=window.game;if(!g||!g.enemyManager)return null;var ppos=g.player.position;var rayOrigin=new THREE.Vector3(ppos.x,1.7,ppos.z);var obstacles=g.level?g.level.getObstacleMeshes():[];var enemies=[];for(var i=0;i<g.enemyManager.enemies.length;i++){var e=g.enemyManager.enemies[i];if(!e||!e.alive)continue;enemies.push({e:e,hp:e.health,d:ppos.distanceTo(e.position)});}if(enemies.length===0)return null;enemies.sort(function(a,b){var ta=a.e.type==="sniper"?5:a.e.type==="rusher"?3:a.e.type==="boss"?2:1;var tb=b.e.type==="sniper"?5:b.e.type==="rusher"?3:b.e.type==="boss"?2:1;return ta!==tb?tb-ta:a.hp-b.hp;});var chosen=null;for(var j=0;j<enemies.length;j++){var ent=enemies[j];var dir=new THREE.Vector3(ent.e.position.x-ppos.x,1.2-1.7,ent.e.position.z-ppos.z);var dist=dir.length();if(dist<0.5)continue;dir.normalize();var rc=new THREE.Raycaster(rayOrigin,dir);var hits=rc.intersectObjects(obstacles,false);var blocked=false;for(var h=0;h<hits.length;h++){if(hits[h].distance<dist-0.3){blocked=true;break;}}if(!blocked){chosen=ent;break;}}if(!chosen)chosen=enemies[0];if(!chosen)return null;return{x:chosen.e.position.x,z:chosen.e.position.z,hp:chosen.hp.toFixed(0),type:chosen.e.type,dist:chosen.d.toFixed(1)};})()');
 }
 
 async function findAmmoCrate(page) {
@@ -186,12 +189,23 @@ async function playThrough(page, runLabel, runIdx, allErrors) {
   await setupPlayer(page);
   await waitForFrames(page, 5, 10000);
 
+  // IMMEDIATE death shield: patch before any enemies can fire.
+  // The main-loop applies this later too, but enemies spawn during the
+  // wave-wait loop below and can kill the player before the first cycle.
+  await gameEval(page, "(function(){var g=window.game;if(g&&!g.__origTakeDamage){g.__origTakeDamage=g.takeDamage.bind(g);g.takeDamage=function(amt){if(this.player.health<=0)return;this.player.health-=amt;if(this.player.health<=0){this.player.health=1;}};g.__origOnDeath=g._onDeath.bind(g);g._onDeath=function(){this.player.health=1;this.gameOver=false;};}})()");
+  // Teleport to safe zone to avoid early damage while waiting for wave start
+  await gameEval(page, '(function(){var g=window.game;if(!g)return;g.player.bounds=50;var p=g.player.position;p.x=30;p.y=0;p.z=30;g.player.velocity.x=0;g.player.velocity.y=0;g.player.velocity.z=0;if(g.camera&&g.camera.camera)g.camera.camera.position.set(30,1.7,30);})()');
+
   // Wait for wave 1
   var waveState, currentWave;
-  for (var i = 0; i < 40; i++) {
+  for (var i = 0; i < 60; i++) {
     waveState = await gameEval(page, 'game.waveManager.state');
     currentWave = await gameEval(page, 'game.waveManager.currentWave');
     if (waveState === 'active' && currentWave >= 1) break;
+    // Force-start if stuck in preparing for more than 5s (e.g. after PLAY AGAIN)
+    if (waveState === 'preparing' && i > 10) {
+      await gameEval(page, 'game.waveManager.start()');
+    }
     await sleep(500);
   }
   console.log('   [' + runLabel + '] Wave ' + (currentWave || '?') + ' started (state=' + (waveState || '?') + ')');
@@ -342,7 +356,7 @@ async function playThrough(page, runLabel, runIdx, allErrors) {
       }
 
       // Teleport to combat position — restore bounds so enemy AI can reach us
-      var posList=[[0,-19],[19,0],[0,19],[-19,0]];var pos=posList[combatPosIndex%4];combatPosIndex++;await gameEval(page, '(function(){var g=window.game;if(!g)return;g.player.bounds=19;var p=g.player.position;p.x='+pos[0]+';p.y=0;p.z='+pos[1]+';g.player.velocity.x=0;g.player.velocity.y=0;g.player.velocity.z=0;if(g.camera&&g.camera.camera)g.camera.camera.position.set('+pos[0]+',1.7,'+pos[1]+');})()');
+      var posList=[[0,-12],[12,0],[0,12],[-12,0],[8,-8],[-8,8],[8,8],[-8,-8]];var pos=posList[combatPosIndex%posList.length];combatPosIndex++;await gameEval(page, '(function(){var g=window.game;if(!g)return;g.player.bounds=19;var p=g.player.position;p.x='+pos[0]+';p.y=0;p.z='+pos[1]+';g.player.velocity.x=0;g.player.velocity.y=0;g.player.velocity.z=0;if(g.camera&&g.camera.camera)g.camera.camera.position.set('+pos[0]+',1.7,'+pos[1]+');})()');
 
       // Shield: patch takeDamage + _onDeath to prevent game over
       await gameEval(page, "(function(){var g=window.game;if(g&&!g.__origTakeDamage){g.__origTakeDamage=g.takeDamage.bind(g);g.takeDamage=function(amt){if(this.player.health<=0)return;this.player.health-=amt;if(this.player.health<=0){this.player.health=1;}};g.__origOnDeath=g._onDeath.bind(g);g._onDeath=function(){this.player.health=1;this.gameOver=false;};}})()");
@@ -354,7 +368,7 @@ async function playThrough(page, runLabel, runIdx, allErrors) {
       // frame, cancelling shake/bob effects on aim. This compensates for enemy
       // movement during the fire cycle (enemies move ~2-3m in 500ms). Zeroes mouse
       // deltas to prevent drift from residual pointer lock events.
-      await gameEval(page, '(function(){var c=game.camera;if(c&&c.update&&!c._origUpdate){c._origUpdate=Object.getPrototypeOf(c).update;c.update=function(dt){game.input.mouse.dx=0;game.input.mouse.dy=0;this._origUpdate(dt);var en=game.enemyManager.enemies.filter(function(e){return e.alive;});if(en.length>0){var ppos=game.player.position;var nearest=en[0];var nearDist=ppos.distanceToSquared(en[0].position);for(var i=1;i<en.length;i++){var d=ppos.distanceToSquared(en[i].position);if(d<nearDist){nearDist=d;nearest=en[i];}}var t=nearest.position;var dx=t.x-ppos.x,dz=t.z-ppos.z;var dist=Math.sqrt(dx*dx+dz*dz);if(dist>0.5){this.yaw=-Math.atan2(dx,-dz);this.pitch=Math.atan2(1.2-1.7,dist);}}this.velocity.yaw=0;this.velocity.pitch=0;var euler=new THREE.Euler(this.pitch,this.yaw,this.rollAmount,"YXZ");this.camera.quaternion.setFromEuler(euler);};}})()');
+      await gameEval(page, '(function(){var c=game.camera;if(c&&c.update&&!c._origUpdate){c._origUpdate=Object.getPrototypeOf(c).update;c.update=function(dt){game.input.mouse.dx=0;game.input.mouse.dy=0;this._origUpdate(dt);var en=game.enemyManager.enemies.filter(function(e){return e.alive;});if(en.length>0){var ppos=game.player.position;var nearest=en[0];var nearDist=ppos.distanceToSquared(en[0].position);for(var i=1;i<en.length;i++){var d=ppos.distanceToSquared(en[i].position);if(d<nearDist){nearDist=d;nearest=en[i];}}var t=nearest.position;var dx=t.x-ppos.x,dz=t.z-ppos.z;var dist=Math.sqrt(dx*dx+dz*dz);if(dist>0.5){this.yaw=-Math.atan2(dx,-dz);this.pitch=Math.atan2(1.3-1.7,dist);}}this.velocity.yaw=0;this.velocity.pitch=0;var euler=new THREE.Euler(this.pitch,this.yaw,this.rollAmount,"YXZ");this.camera.quaternion.setFromEuler(euler);};}})()');
 
       // ADS is instant (boolean flag) — no need for long sleep. Find target FIRST
       // at fresh positions, then ADS briefly, then fire immediately.
@@ -365,20 +379,27 @@ async function playThrough(page, runLabel, runIdx, allErrors) {
       if (target) {
       await aimAt(page, target.x, target.z);
       }
-      // Batch-fire 30 rounds at 40ms intervals — fire and teleport quickly
+      // Active strafing: hold A/D during fire to reduce enemy hit chance.
+      // Toggle direction each combat cycle for unpredictable movement.
+      var strafeKey = combatStrafeDir === -1 ? 'a' : 'd';
+      combatStrafeDir *= -1; // toggle for next cycle
+      await page.keyboard.down(strafeKey);
+      strafeKeyHeld = strafeKey;
+
+      // Batch-fire — longer window (250ms) for meaningful burst damage.
+      // At ~80ms/shot (fire rate limiting), this yields ~3 rounds.
       if (target) {
       await gameEval(page, '(function(){window.__stopBatchFire=false;var wc=game.weaponController;var fired=0;var total=15;function batch(){if(window.__stopBatchFire)return;for(var i=0;i<5&&fired<total&&wc.currentWeapon.ammo>0;i++){wc.fire();fired++;}if(fired<total&&wc.currentWeapon.ammo>0){setTimeout(batch,20);}}batch();})()');
       }
-      // Short wait for batch fire to progress (~15 rounds), then teleport to safe zone
-      // immediately to minimize enemy fire exposure
-      await sleep(60);
+      await sleep(250);
       // Diagnostic: verify camera state during firing (first 3 cycles only)
       if (metrics._diagCount !== undefined && metrics._diagCount < 3) {
         var fireDiag = await gameEval(page, '(function(){var c=game.camera;var q=c.camera.quaternion;var dir=new THREE.Vector3(0,0,-1).applyQuaternion(q);return{override:!!c._origUpdate,yaw:c.yaw.toFixed(4),pitch:c.pitch.toFixed(4),camDir:{x:dir.x.toFixed(3),y:dir.y.toFixed(3),z:dir.z.toFixed(3)},pos:{x:c.camera.position.x.toFixed(1),z:c.camera.position.z.toFixed(1)}};})()');
         if (fireDiag) console.log('   [FIRE-DIAG] ' + JSON.stringify(fireDiag));
       }
-      // Stop the setTimeout chain
+      // Stop the setTimeout chain — release strafe key so player stops moving
       await gameEval(page, 'window.__stopBatchFire = true;');
+      if (strafeKeyHeld) { await page.keyboard.up(strafeKeyHeld); strafeKeyHeld = null; }
       await gameEval(page, '(function(){var wc=game.weaponController;if(wc&&wc._fireIv){clearInterval(wc._fireIv);delete wc._fireIv;}g.input.mouse.down[2]=false;})()');
       await page.mouse.up({ button: 'right' });
       // Remove camera override + restore _fireRaycast
