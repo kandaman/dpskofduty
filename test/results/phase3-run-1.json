@@ -1,50 +1,166 @@
 {
   "run": "Run1",
-  "startTime": 1787717368464,
-  "duration": 84.739,
+  "startTime": 1787728671820,
+  "duration": 18.296,
   "reachedVictory": false,
   "deaths": 1,
-  "kills": 20,
+  "kills": 1,
   "minPlayerHp": 0,
   "damageReceived": 100,
-  "reloadCount": 7,
+  "reloadCount": 0,
   "ammoPickups": 0,
   "waveTimes": {
     "1": {
-      "start": 1787717369042,
-      "end": 1787717388581,
-      "duration": "19.5"
-    },
-    "2": {
-      "start": 1787717391681,
-      "end": 1787717404611,
-      "duration": "12.9"
-    },
-    "3": {
-      "start": 1787717407716,
-      "end": 1787717420424,
-      "duration": "12.7"
-    },
-    "4": {
-      "start": 1787717423575,
-      "end": 1787717439919,
-      "duration": "16.3"
-    },
-    "5": {
-      "start": 1787717442988,
+      "start": 1787728673141,
       "end": null,
       "duration": null
     }
   },
-  "wavesCompleted": 4,
-  "shotsFired": 210,
-  "hits": 41,
-  "headshots": 30,
-  "damageDealt": 1988,
+  "wavesCompleted": 0,
+  "shotsFired": 15,
+  "hits": 5,
+  "headshots": 4,
+  "damageDealt": 252,
   "killsByType": {
-    "rifleman": 10,
-    "rusher": 6,
-    "sniper": 4,
+    "rifleman": 1,
+    "rusher": 0,
+    "sniper": 0,
     "boss": 0
-  }
+  },
+  "startingReserve": 360,
+  "finalReserve": 360,
+  "longestNoCombatInterval": 2.257,
+  "runtimeErrors": [],
+  "lastDeathDump": [
+    {
+      "t": "0.8",
+      "wave": 1,
+      "hp": 100,
+      "state": "SEARCH",
+      "target": "none",
+      "nearestThreat": "none",
+      "distance": 999,
+      "ammo": 30,
+      "reserve": 360,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "1.5",
+      "wave": 1,
+      "hp": 100,
+      "state": "SEARCH",
+      "target": "none",
+      "nearestThreat": "none",
+      "distance": 999,
+      "ammo": 30,
+      "reserve": 360,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "2.3",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 17.53879340594828,
+      "ammo": 30,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "4.8",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 11.602729192845304,
+      "ammo": 27,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "6.9",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 10.758838011428013,
+      "ammo": 24,
+      "reserve": 360,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "8.0",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 7.85976707993975,
+      "ammo": 24,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "10.1",
+      "wave": 1,
+      "hp": 82.00079429241406,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 6.133166250483699,
+      "ammo": 21,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "12.3",
+      "wave": 1,
+      "hp": 44.44727646754617,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 10.837790979296605,
+      "ammo": 18,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "14.5",
+      "wave": 1,
+      "hp": 18.537129205851805,
+      "state": "RETREAT",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 24.63469133931724,
+      "ammo": 15,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "15.8",
+      "wave": 1,
+      "hp": 10.256538730014963,
+      "state": "RECOVER",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 21.413183533516115,
+      "ammo": 15,
+      "reserve": 360,
+      "los": true,
+      "stuck": 0
+    }
+  ]
 }

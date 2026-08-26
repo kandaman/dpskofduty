@@ -93,13 +93,13 @@ async function lockPointer(page) {
 // ─── AIMING (read-only aiming aid — does not alter hit detection) ──────
 async function aimAt(page, tx, tz, headHeight) {
   if (headHeight === undefined) headHeight = 1.3;
-  var str = '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(' + headHeight + '-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;var euler=new THREE.Euler(pitch,yaw,0,"YXZ");c.camera.quaternion.setFromEuler(euler);return true;})()';
+  var str = '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(' + headHeight + '-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);var euler=new THREE.Euler(pitch,yaw,0,"YXZ");c.camera.quaternion.setFromEuler(euler);return true;})()';
   var result = await gameEval(page, str);
   return result;
 }
 
 async function aimDirection(page, yaw, pitch) {
-  await gameEval(page, '(function(){var c=window.game.camera;c.yaw=' + yaw + ';c.pitch=' + (pitch || 0) + ';c.velocity.yaw=0;c.velocity.pitch=0;var euler=new THREE.Euler(' + (pitch || 0) + ',' + yaw + ',0,"YXZ");c.camera.quaternion.setFromEuler(euler);})()');
+  await gameEval(page, '(function(){var c=window.game.camera;c.yaw=' + yaw + ';c.pitch=' + (pitch || 0) + ';c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);var euler=new THREE.Euler(' + (pitch || 0) + ',' + yaw + ',0,"YXZ");c.camera.quaternion.setFromEuler(euler);})()');
 }
 
 // ─── STATE READING (read-only — no gameplay modification) ─────────────
@@ -112,6 +112,9 @@ async function hasLineOfSight(page, tx, tz) {
 }
 
 async function checkLOSBetweenPoints(page, ax, az, bx, bz) {
+  // Use y=0.8 (waist) for the LOS check between player and target.
+  // This is intentionally conservative: if a waist-high ray is blocked,
+  // the bot maneuvers instead of shooting at obstacles.
   return await gameEval(page, "(function(){var g=window.game;if(!g||!g.scene)return false;var obstacles=g.level?g.level.getObstacleMeshes():[];if(!obstacles.length)return true;var start=new THREE.Vector3(" + ax + ",0.8," + az + ");var end=new THREE.Vector3(" + bx + ",0.8," + bz + ");var dir=new THREE.Vector3().subVectors(end,start);var dist=dir.length();if(dist<0.5)return true;dir.normalize();var raycaster=new THREE.Raycaster();raycaster.set(start,dir);raycaster.far=dist+0.1;var hits=raycaster.intersectObjects(obstacles,false);return hits.length===0||hits[0].distance>=dist;})()");
 }
 
@@ -322,7 +325,8 @@ function dumpDecisionLog(log) {
   var slice = log.entries.slice(-50);
   for (var i = 0; i < slice.length; i++) {
     var e = slice[i];
-    console.log('   [' + e.t + 's] W' + e.wave + ' HP:' + e.hp + ' ' + e.state + ' -> ' + e.target + ' d:' + e.dist.toFixed(1) + ' a:' + e.ammo + 'r:' + e.reserve + (e.los ? ' LOS' : ' nLOS') + ' stuck:' + e.stuck);
+    var dVal = e.dist !== undefined ? e.dist : (e.distance !== undefined ? e.distance : 999);
+    console.log('   [' + e.t + 's] W' + e.wave + ' HP:' + e.hp + ' ' + e.state + ' -> ' + e.target + ' d:' + dVal.toFixed(1) + ' a:' + e.ammo + 'r:' + e.reserve + (e.los ? ' LOS' : ' nLOS') + ' stuck:' + e.stuck);
   }
 }
 
@@ -418,6 +422,7 @@ async function playThrough(page, runLabel) {
   var noCombatStart = Date.now();
   var decisionLog = createDecisionLog();
   var stuckTracker = createStuckTracker();
+  var consecutiveNlos = 0;
 
   var loopStart = Date.now();
   var MAX_DURATION = 25 * 60 * 1000; // 25min max per run
@@ -600,6 +605,11 @@ async function playThrough(page, runLabel) {
     };
 
     if (currentState === STATE.SEARCH) {
+      // Reload during safe gaps (no enemies, less than full mag)
+      if (enemies.length === 0 && ammo < 30 && reserve > 0 && !reloading) {
+        nextState = STATE.RELOAD;
+        stateTimer = 0;
+      }
       if (target) {
         nextState = STATE.ENGAGE;
         stateTimer = 0;
@@ -613,19 +623,29 @@ async function playThrough(page, runLabel) {
         nextState = STATE.RELOAD;
         stateTimer = 0;
       }
+      // Proactive reload when safe (low ammo, far from threats)
+      if (ammo <= 3 && reserve > 0 && !reloading && nearestDist > 15) {
+        nextState = STATE.RELOAD;
+        stateTimer = 0;
+      }
       // Low HP check → retreat
       if (hp < HP_THRESHOLD.LOW) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
       // Rusher too close → retreat (with HP check)
-      if (nearestRusher && nearestRusherDist < 5 && hp < 80) {
+      if (nearestRusher && nearestRusherDist < 8 && hp < 80) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
       // No target → search
       if (!target) {
         nextState = STATE.SEARCH;
+        stateTimer = 0;
+      }
+      // Sustained nLOS + taking damage → retreat to find a better angle
+      if (consecutiveNlos > 3 && hp < 70) {
+        nextState = STATE.RETREAT;
         stateTimer = 0;
       }
       // Low ammo + safe → reload
@@ -683,9 +703,13 @@ async function playThrough(page, runLabel) {
         nextState = target ? STATE.ENGAGE : STATE.SEARCH;
         stateTimer = 0;
       }
-      // Emergency: being attacked during reload
-      if (nearestRusher && nearestRusherDist < 8 && hp < 40) {
-        // Cancel reload? Can't cancel in-game, just wait
+      // Emergency: being attacked during reload — force retreat to start moving
+      if (hp < 30) {
+        nextState = STATE.RETREAT;
+        stateTimer = 0;
+      } else if (nearestRusher && nearestRusherDist < 8 && hp < 40) {
+        nextState = STATE.RETREAT;
+        stateTimer = 0;
       }
       if (stateTimer > 5) {
         // Reload timed out or something went wrong
@@ -693,8 +717,8 @@ async function playThrough(page, runLabel) {
         stateTimer = 0;
       }
     } else if (currentState === STATE.RECOVER) {
-      // Regenerated enough → re-engage
-      if (hp >= recovHealthTresh) {
+      // Regen: 3s delay + 15 HP/s — re-engage after meaningful recovery
+      if (stateTimer > 6) {
         nextState = STATE.ENGAGE;
         stateTimer = 0;
         coverPos = null;
@@ -702,12 +726,6 @@ async function playThrough(page, runLabel) {
       // No enemies → search
       if (enemies.length === 0) {
         nextState = STATE.SEARCH;
-        stateTimer = 0;
-        coverPos = null;
-      }
-      // Been recovering too long → try to re-engage
-      if (stateTimer > 12 && hp > HP_THRESHOLD.MEDIUM) {
-        nextState = STATE.ENGAGE;
         stateTimer = 0;
         coverPos = null;
       }
@@ -754,8 +772,14 @@ async function playThrough(page, runLabel) {
     }
 
     // Log the decision
-    decision.state = nextState;
     decision.los = target ? await checkLOSBetweenPoints(page, playerX, playerZ, target.x, target.z) : false;
+    // Track consecutive nLOS for retreat decision when stuck
+    if (currentState === STATE.ENGAGE && target && !decision.los) {
+      consecutiveNlos++;
+    } else {
+      consecutiveNlos = 0;
+    }
+    decision.state = nextState;
     decision.stuck = stuckTracker.consecutiveStuck;
     logDecision(decisionLog, decision);
 
@@ -854,17 +878,26 @@ async function playThrough(page, runLabel) {
       // Fire if we have ammo and LOS
       if (ammo > 0 && !reloading) {
         if (targetLos) {
-          // Burst fire: short burst, then stop
-          await page.mouse.down();
-          await sleep(80); // ~3 rounds at 750RPM (~80ms between shots)
-          await page.mouse.up();
+          // Stop moving while firing — movement causes head bob and stale
+          // player positions that degrade aim accuracy between shots.
+          await releaseMovementKeys(page);
+
+          // Fire individual shots with re-aim between each.
+          for (var si = 0; si < 3 && ammo > 0; si++) {
+            await aimAt(page, target.x, target.z, 1.25);
+            await page.mouse.down();
+            await sleep(30);
+            await page.mouse.up();
+            await sleep(70);
+            // Update ammo after each shot to detect empty mag early
+            var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
+            if (typeof liveAmmo === 'number') ammo = liveAmmo;
+          }
           isFiring = true;
-          // Brief pause between bursts for accuracy
-          await sleep(50);
         } else {
-          // No LOS, don't waste ammo
+          // No LOS — walk toward target while strafing to navigate around obstacles
           if (isFiring) { await stopFiring(page); isFiring = false; }
-          // Try to reposition for better LOS
+          await page.keyboard.down('w');
           if (strafeTimer % 10 < 5) {
             await page.keyboard.down('a');
             await page.keyboard.up('d');
@@ -872,7 +905,7 @@ async function playThrough(page, runLabel) {
             await page.keyboard.down('d');
             await page.keyboard.up('a');
           }
-          await sleep(150);
+          await sleep(300);
         }
       } else {
         if (isFiring) { await stopFiring(page); isFiring = false; }
@@ -916,19 +949,24 @@ async function playThrough(page, runLabel) {
         if (ammo > 0 && !reloading) {
           var rusherLos = await checkLOSBetweenPoints(page, playerX, playerZ, nearestRusher.x, nearestRusher.z);
           if (rusherLos) {
-            await aimAt(page, nearestRusher.x, nearestRusher.z, 1.25);
-            await page.mouse.down();
-            await sleep(60);
-            await page.mouse.up();
+            for (var ri = 0; ri < 3 && ammo > 0; ri++) {
+              await aimAt(page, nearestRusher.x, nearestRusher.z, 1.25);
+              await page.mouse.down();
+              await sleep(30);
+              await page.mouse.up();
+              await sleep(70);
+              var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
+              if (typeof liveAmmo === 'number') ammo = liveAmmo;
+            }
           }
         }
       }
 
       await sleep(200);
 
-      // Try to find cover during retreat
+      // Try to find cover during retreat (IMMEDIATELY — no delay)
       var foundCover = findCover(enemies, state.obstacles || [], playerX, playerZ);
-      if (foundCover && stateTimer > 2) {
+      if (foundCover) {
         coverPos = getCoverPosition(foundCover, playerX, playerZ);
         if (coverPos) {
           var coverDist = Math.hypot(coverPos.x - playerX, coverPos.z - playerZ);
@@ -1399,7 +1437,7 @@ async function runPhase3() {
 
   var browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-gpu']
+    args: ['--no-sandbox', '--use-gl=swiftshader']
   });
   var ctx = await browser.newContext({ viewport: { width: 800, height: 500 } });
   var page = await ctx.newPage();

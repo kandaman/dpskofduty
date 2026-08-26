@@ -1,45 +1,166 @@
 {
   "run": "Run2",
-  "startTime": 1787717456737,
-  "duration": 67.147,
+  "startTime": 1787728693528,
+  "duration": 18.749,
   "reachedVictory": false,
   "deaths": 1,
-  "kills": 16,
+  "kills": 1,
   "minPlayerHp": 0,
   "damageReceived": 100,
-  "reloadCount": 5,
+  "reloadCount": 0,
   "ammoPickups": 0,
   "waveTimes": {
     "1": {
-      "start": 1787717457362,
-      "end": 1787717469720,
-      "duration": "12.4"
-    },
-    "2": {
-      "start": 1787717471770,
-      "end": 1787717481954,
-      "duration": "10.2"
-    },
-    "3": {
-      "start": 1787717484995,
-      "end": 1787717501945,
-      "duration": "16.9"
-    },
-    "4": {
-      "start": 1787717505413,
+      "start": 1787728694881,
       "end": null,
       "duration": null
     }
   },
-  "wavesCompleted": 3,
-  "shotsFired": 363,
-  "hits": 76,
-  "headshots": 55,
-  "damageDealt": 3668,
+  "wavesCompleted": 0,
+  "shotsFired": 30,
+  "hits": 7,
+  "headshots": 6,
+  "damageDealt": 364,
   "killsByType": {
-    "rifleman": 9,
-    "rusher": 5,
-    "sniper": 2,
+    "rifleman": 1,
+    "rusher": 0,
+    "sniper": 0,
     "boss": 0
-  }
+  },
+  "startingReserve": 420,
+  "finalReserve": 420,
+  "longestNoCombatInterval": 2.389,
+  "runtimeErrors": [],
+  "lastDeathDump": [
+    {
+      "t": "0.8",
+      "wave": 1,
+      "hp": 100,
+      "state": "SEARCH",
+      "target": "none",
+      "nearestThreat": "none",
+      "distance": 999,
+      "ammo": 30,
+      "reserve": 420,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "1.6",
+      "wave": 1,
+      "hp": 100,
+      "state": "SEARCH",
+      "target": "none",
+      "nearestThreat": "none",
+      "distance": 999,
+      "ammo": 30,
+      "reserve": 420,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "2.4",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 20.97333232977134,
+      "ammo": 30,
+      "reserve": 420,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "4.9",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 18.32493224593413,
+      "ammo": 27,
+      "reserve": 420,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "7.1",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 14.9562485860661,
+      "ammo": 24,
+      "reserve": 420,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "9.3",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 8.542452631385387,
+      "ammo": 21,
+      "reserve": 420,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "10.5",
+      "wave": 1,
+      "hp": 100,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 5.021941391047034,
+      "ammo": 21,
+      "reserve": 420,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "12.6",
+      "wave": 1,
+      "hp": 50.29393850992686,
+      "state": "ENGAGE",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 4.32851921626322,
+      "ammo": 18,
+      "reserve": 420,
+      "los": true,
+      "stuck": 0
+    },
+    {
+      "t": "14.8",
+      "wave": 1,
+      "hp": 3.7147425281984807,
+      "state": "RETREAT",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 7.568748217808452,
+      "ammo": 15,
+      "reserve": 420,
+      "los": false,
+      "stuck": 0
+    },
+    {
+      "t": "16.0",
+      "wave": 1,
+      "hp": 3.7147425281984807,
+      "state": "RECOVER",
+      "target": "rifleman",
+      "nearestThreat": "rifleman",
+      "distance": 10.04820076824694,
+      "ammo": 15,
+      "reserve": 420,
+      "los": false,
+      "stuck": 0
+    }
+  ]
 }

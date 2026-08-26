@@ -277,6 +277,11 @@ export class Enemy {
     if (dist < 0.5) return true;
     dir.divideScalar(dist);
 
+    // Ensure world matrices are current for accurate raycasting
+    if (this.game && this.game.scene) {
+      this.game.scene.updateMatrixWorld(true);
+    }
+
     this._losRaycaster.set(start, dir);
     this._losRaycaster.far = dist + 0.1;
     const hits = this._losRaycaster.intersectObjects(this.obstacles, false);
