@@ -93,18 +93,52 @@ async function lockPointer(page) {
 // ─── AIMING (read-only aiming aid — does not alter hit detection) ──────
 async function aimAt(page, tx, tz, headHeight) {
   if (headHeight === undefined) headHeight = 1.3;
-  var str = '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(' + headHeight + '-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);var euler=new THREE.Euler(pitch,yaw,0,"YXZ");c.camera.quaternion.setFromEuler(euler);return true;})()';
+  var str = '(function(){var px=game.player.position.x,pz=game.player.position.z;var dx=' + tx + '-px,dz=' + tz + '-pz;var dist=Math.sqrt(dx*dx+dz*dz);if(dist<0.5)return false;var yaw=-Math.atan2(dx,-dz);var pitch=Math.atan2(' + headHeight + '-1.7,dist);var c=window.game.camera;c.yaw=yaw;c.pitch=pitch;c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);c.rollAmount=0;c.bobOffset.set(0,0,0);c.bobSpeed=0;var euler=new THREE.Euler(pitch,yaw,0,"YXZ");c.camera.quaternion.setFromEuler(euler);return true;})()';
   var result = await gameEval(page, str);
   return result;
 }
 
 async function aimDirection(page, yaw, pitch) {
-  await gameEval(page, '(function(){var c=window.game.camera;c.yaw=' + yaw + ';c.pitch=' + (pitch || 0) + ';c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);var euler=new THREE.Euler(' + (pitch || 0) + ',' + yaw + ',0,"YXZ");c.camera.quaternion.setFromEuler(euler);})()');
+  await gameEval(page, '(function(){var c=window.game.camera;c.yaw=' + yaw + ';c.pitch=' + (pitch || 0) + ';c.velocity.yaw=0;c.velocity.pitch=0;c.shakeAmount=0;c.shakeOffset.set(0,0,0);c.rollAmount=0;c.bobOffset.set(0,0,0);var euler=new THREE.Euler(' + (pitch || 0) + ',' + yaw + ',0,"YXZ");c.camera.quaternion.setFromEuler(euler);})()');
+}
+
+// Wait until sprint-out completes so fire() is not blocked by isSprintBlocked.
+// isSprintBlocked clears after sprintOutDuration (250ms) of not sprinting.
+async function waitSprintOut(page) {
+  for (var w = 0; w < 40; w++) {
+    var blocked = await gameEval(page, 'game.weaponController ? game.weaponController.isSprintBlocked : false');
+    if (!blocked) return true;
+    await sleep(50);
+  }
+  return false;
+}
+
+// Fire a tight burst while LOS holds. Re-aims each shot for accuracy but
+// keeps the burst continuous (no gap) so the enemy can't recover.
+// Re-reads the SPECIFIC chosen enemy's LIVE position (by array index) before
+// each shot so the aim isn't stale — the enemy advances between the state
+// read and the shot.
+async function fireAimedBurst(page, enemyIdx, maxShots) {
+  var fired = 0;
+  for (var b = 0; b < maxShots; b++) {
+    var live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+    if (!live) break;
+    await aimAt(page, live.x, live.z, 1.25);
+    await page.mouse.down();
+    await sleep(25);
+    await page.mouse.up();
+    await sleep(60); // fireCooldown is 80ms — keep per-shot >80ms so each fires
+    // Check if mag emptied
+    var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
+    if (typeof liveAmmo === 'number' && liveAmmo <= 0) break;
+    fired++;
+  }
+  return fired;
 }
 
 // ─── STATE READING (read-only — no gameplay modification) ─────────────
 async function readGameState(page) {
-  return await gameEval(page, '(function(){var g=window.game;if(!g)return null;var ammoData=null;try{ammoData={ammo:g.weaponController.currentWeapon.ammo,reserve:g.weaponController.currentWeapon.stats.reserveAmmo,reloading:g.weaponController.isReloading,isFiring:g.weaponController.isFiring};}catch(e){ammoData={ammo:0,reserve:0,reloading:false,isFiring:false};}var enemies=[];if(g.enemyManager){var ee=g.enemyManager.enemies;for(var ei=0;ei<ee.length;ei++){var e=ee[ei];if(e&&e.alive){enemies.push({x:e.position.x,z:e.position.z,hp:e.health,type:e.type,dist:g.player.position.distanceTo(e.position)});}}}var pickup=null;if(g.ammoPickup&&g.ammoPickup.active){pickup={x:g.ammoPickup.mesh.position.x,z:g.ammoPickup.mesh.position.z};}var obs=[];if(g.level){var meshes=g.level.getObstacleMeshes();for(var oi=0;oi<meshes.length;oi++){obs.push({x:meshes[oi].position.x,z:meshes[oi].position.z});}}return{hp:g.player.health,maxHp:g.player.maxHealth||100,ammo:ammoData.ammo,reserve:ammoData.reserve,reloading:ammoData.reloading,weaponFiring:ammoData.isFiring,score:g.score,gameOver:g.gameOver,victory:g.waveManager.victoryAchieved,waveState:g.waveManager.state,currentWave:g.waveManager.currentWave,killCount:g.enemyManager?g.enemyManager.killCount:0,playerX:g.player.position.x,playerZ:g.player.position.z,enemies:enemies,ammoPickup:pickup,obstacles:obs};})()');
+  return await gameEval(page, '(function(){var g=window.game;if(!g)return null;var ammoData=null;try{ammoData={ammo:g.weaponController.currentWeapon.ammo,reserve:g.weaponController.currentWeapon.stats.reserveAmmo,reloading:g.weaponController.isReloading,isFiring:g.weaponController.isFiring};}catch(e){ammoData={ammo:0,reserve:0,reloading:false,isFiring:false};}var enemies=[];if(g.enemyManager){var ee=g.enemyManager.enemies;for(var ei=0;ei<ee.length;ei++){var e=ee[ei];if(e&&e.alive){enemies.push({x:e.position.x,z:e.position.z,hp:e.health,type:e.type,idx:ei,dist:g.player.position.distanceTo(e.position)});}}}var pickup=null;if(g.ammoPickup&&g.ammoPickup.active){pickup={x:g.ammoPickup.mesh.position.x,z:g.ammoPickup.mesh.position.z};}var obs=[];if(g.level){var meshes=g.level.getObstacleMeshes();for(var oi=0;oi<meshes.length;oi++){obs.push({x:meshes[oi].position.x,z:meshes[oi].position.z});}}return{hp:g.player.health,maxHp:g.player.maxHealth||100,ammo:ammoData.ammo,reserve:ammoData.reserve,reloading:ammoData.reloading,weaponFiring:ammoData.isFiring,score:g.score,gameOver:g.gameOver,victory:g.waveManager.victoryAchieved,waveState:g.waveManager.state,currentWave:g.waveManager.currentWave,killCount:g.enemyManager?g.enemyManager.killCount:0,playerX:g.player.position.x,playerZ:g.player.position.z,enemies:enemies,ammoPickup:pickup,obstacles:obs};})()');
 }
 
 async function hasLineOfSight(page, tx, tz) {
@@ -381,7 +415,7 @@ async function playThrough(page, runLabel) {
   };
 
   await lockPointer(page);
-  await gameEval(page, 'game.dtCap = 0.5');
+  await gameEval(page, 'game.dtCap = 0.1'); // clamp hiccup frames: dtCap=0.5 lets enemies jump ~0.75m/frame, wrecking aim
   await waitForFrames(page, 3, 10000);
 
   // Wait for Wave 1 to start naturally
@@ -633,8 +667,9 @@ async function playThrough(page, runLabel) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
-      // Rusher too close → retreat (with HP check)
-      if (nearestRusher && nearestRusherDist < 8 && hp < 80) {
+      // Rusher too close → retreat (rushers charge fast; fight them from
+      // range, but retreat once they reach point-blank or we're low HP)
+      if ((nearestRusher && nearestRusherDist < 4) || hp < HP_THRESHOLD.LOW) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
@@ -717,8 +752,10 @@ async function playThrough(page, runLabel) {
         stateTimer = 0;
       }
     } else if (currentState === STATE.RECOVER) {
-      // Regen: 3s delay + 15 HP/s — re-engage after meaningful recovery
-      if (stateTimer > 6) {
+      // Regen: 3s delay + 15 HP/s — re-engage after meaningful recovery.
+      // Don't linger: the enemies advance while we hide, so re-engage once
+      // HP is high enough to fight, even if not fully recovered.
+      if (stateTimer > 3 || hp >= HP_THRESHOLD.HIGH) {
         nextState = STATE.ENGAGE;
         stateTimer = 0;
         coverPos = null;
@@ -844,15 +881,17 @@ async function playThrough(page, runLabel) {
       var shouldStrafe = strafeTimer % 2 < 1;
       var strafeLeft = Math.floor(strafeTimer / 3) % 2 === 0;
 
-      // Distance management
+      // Distance management — keep the bot at 15-25m where it's effective.
+      // Riflemen advance ~2m/s, so the bot must backpedal whenever the enemy
+      // closes, or it gets swarmed at point-blank range.
       var dist = target.dist;
-      if (dist > 25 && hp > HP_THRESHOLD.MEDIUM) {
+      if (dist > 28 && hp > HP_THRESHOLD.MEDIUM) {
         // Approach slightly
         await page.keyboard.down('w');
         await page.keyboard.up('s');
         isMovingToward = true;
-      } else if (dist < 10 && hp < HP_THRESHOLD.HIGH) {
-        // Backpedal
+      } else if (dist < 10) {
+        // Backpedal (walk, no sprint — avoids sprint-block)
         await page.keyboard.down('s');
         await page.keyboard.up('w');
         isMovingToward = false;
@@ -869,45 +908,44 @@ async function playThrough(page, runLabel) {
         await strafeDirection(page, strafeLeft);
         isStrafing = true;
       } else {
-        // Stop to fire accurately
         await page.keyboard.up('a');
         await page.keyboard.up('d');
         isStrafing = false;
       }
 
-      // Fire if we have ammo and LOS
-      if (ammo > 0 && !reloading) {
-        if (targetLos) {
-          // Stop moving while firing — movement causes head bob and stale
-          // player positions that degrade aim accuracy between shots.
-          await releaseMovementKeys(page);
+      // Fire if we have ammo, LOS, and are at a safe distance where we can
+      // stand still and shoot accurately. When too close, skip firing and
+      // let the distance management backpedal to restore range — firing while
+      // moving (head bob) misses, and standing still at close range lets the
+      // enemy swarm us.
+      if (ammo > 0 && !reloading && targetLos && dist >= 6) {
+        // Stop moving while firing — movement causes head bob and stale
+        // player positions that degrade aim accuracy between shots.
+        await releaseMovementKeys(page);
+        isMovingAway = false;
 
-          // Fire individual shots with re-aim between each.
-          for (var si = 0; si < 3 && ammo > 0; si++) {
-            await aimAt(page, target.x, target.z, 1.25);
-            await page.mouse.down();
-            await sleep(30);
-            await page.mouse.up();
-            await sleep(70);
-            // Update ammo after each shot to detect empty mag early
-            var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
-            if (typeof liveAmmo === 'number') ammo = liveAmmo;
-          }
-          isFiring = true;
-        } else {
-          // No LOS — walk toward target while strafing to navigate around obstacles
-          if (isFiring) { await stopFiring(page); isFiring = false; }
-          await page.keyboard.down('w');
-          if (strafeTimer % 10 < 5) {
-            await page.keyboard.down('a');
-            await page.keyboard.up('d');
-          } else {
-            await page.keyboard.down('d');
-            await page.keyboard.up('a');
-          }
-          await sleep(300);
-        }
+        // Sprint-block avoidance: wait for sprint-out so fire() isn't
+        // blocked by isSprintBlocked (250ms after releasing ShiftLeft).
+        await waitSprintOut(page);
+
+        // LOS-Aware Burst: keep firing while LOS holds — no gap between
+        // shots so the enemy can't recover. Re-aim each shot for accuracy.
+        var burstFired = await fireAimedBurst(page, target.idx, 6);
+        var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
+        if (typeof liveAmmo === 'number') ammo = liveAmmo;
+        if (burstFired > 0) isFiring = true;
+        else isFiring = false;
+      } else if (ammo > 0 && !reloading && targetLos && dist < 10) {
+        // Too close: backpedal to restore distance (no firing while moving).
+        await page.keyboard.down('s');
+        await page.keyboard.up('w');
+        await page.keyboard.up('a');
+        await page.keyboard.up('d');
+        isMovingAway = true;
+        await sleep(200);
       } else {
+        // No LOS / no ammo / reloading: stop firing; distance management
+        // movement keys above still hold (backpedal if close, strafe if far).
         if (isFiring) { await stopFiring(page); isFiring = false; }
       }
 
@@ -925,17 +963,19 @@ async function playThrough(page, runLabel) {
         retreatAngle = Math.PI;
       }
 
-      // Aim retreat direction and sprint away
+      // Aim retreat direction
       await aimDirection(page, retreatAngle, 0);
 
-      // Sprint backward (away from threats)
-      await page.keyboard.down('w'); // Since we're facing away from threats
+      // Sprint backward (away from threats) — sprint (8 m/s) outpaces a
+      // rusher (6.5 m/s), so sprint is the safest escape. Fire-while-sprinting
+      // is blocked, but surviving beats shooting during a retreat.
+      await page.keyboard.down('w');
       await page.keyboard.down('ShiftLeft');
       isMovingAway = true;
       isMovingToward = false;
 
-      // If a rusher is very close, strafe while retreating
-      if (nearestRusher && nearestRusherDist < 8) {
+      // If a rusher is very close, strafe laterally to dodge its charge
+      if (nearestRusher && nearestRusherDist < 10) {
         strafeTimer += 0.5;
         var evadeLeft = Math.floor(strafeTimer / 2) % 2 === 0;
         if (evadeLeft) {
@@ -944,21 +984,6 @@ async function playThrough(page, runLabel) {
         } else {
           await page.keyboard.down('d');
           await page.keyboard.up('a');
-        }
-        // Fire at rusher while retreating if we have ammo and LOS
-        if (ammo > 0 && !reloading) {
-          var rusherLos = await checkLOSBetweenPoints(page, playerX, playerZ, nearestRusher.x, nearestRusher.z);
-          if (rusherLos) {
-            for (var ri = 0; ri < 3 && ammo > 0; ri++) {
-              await aimAt(page, nearestRusher.x, nearestRusher.z, 1.25);
-              await page.mouse.down();
-              await sleep(30);
-              await page.mouse.up();
-              await sleep(70);
-              var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
-              if (typeof liveAmmo === 'number') ammo = liveAmmo;
-            }
-          }
         }
       }
 
@@ -1499,7 +1524,7 @@ async function runPhase3() {
       // Wait for restart to process
       await sleep(800);
       await lockPointer(page);
-      await gameEval(page, 'game.dtCap = 0.5');
+      await gameEval(page, 'game.dtCap = 0.1');
 
       // Verify clean restart state (read-only assertions)
       await verifyRestartState(page);
