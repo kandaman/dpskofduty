@@ -361,9 +361,10 @@ export class Game {
     // Reset effects
     this.effects.reset();
 
-    // Reset wave manager and combat director
+    // Reset wave manager, combat director, and ammo pickup
     this.combatDirector.reset();
     this.waveManager.reset();
+    this.ammoPickup.reset();
 
     // Reset weapons
     const weapon = this.weaponController.currentWeapon;

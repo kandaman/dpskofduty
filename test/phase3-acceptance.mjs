@@ -1290,6 +1290,11 @@ async function verifyRestartState(page) {
   var enemies = await gameEval(page, 'game.enemyManager.enemies.length');
   var waveState = await gameEval(page, 'game.waveManager.state');
   var wave = await gameEval(page, 'game.waveManager.currentWave');
+  var pickupActive = await gameEval(page, 'game.ammoPickup.active');
+
+  // Allow a brief delay for pickup state to settle after restart
+  await sleep(200);
+  var pickupActiveAfter = await gameEval(page, 'game.ammoPickup.active');
 
   assert(score === 0, 'Score reset to 0 (was ' + score + ')');
   assert(hp === 100, 'HP reset to 100 (was ' + hp + ')');
@@ -1298,6 +1303,8 @@ async function verifyRestartState(page) {
   assert(enemies === 0, 'Old enemies cleared (count=' + enemies + ')');
   assert(waveState === 'preparing' || waveState === 'active', 'Wave manager in preparing state (was ' + waveState + ')');
   assert(wave === 0 || wave === 1, 'Wave reset to 0/1 (was ' + wave + ')');
+  assert(!pickupActive, 'Ammo pickup inactive after restart (was ' + pickupActive + ')');
+  assert(!pickupActiveAfter, 'Ammo pickup stays inactive after delay (was ' + pickupActiveAfter + ')');
 }
 
 // ─── GATE VERIFICATION ────────────────────────────────────────────────
@@ -1443,6 +1450,22 @@ async function runPhase3() {
   var page = await ctx.newPage();
   var allErrors = await setupErrorCapture(page);
 
+  // Evidence identity
+  var acceptanceRunId = 'p3-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+  var gitCommit = '';
+  try {
+    gitCommit = execSync('git rev-parse HEAD', { encoding: 'utf-8', cwd: path.resolve(__dirname, '..') }).trim();
+  } catch (e) {
+    gitCommit = 'unknown-' + Date.now();
+  }
+
+  // Stale evidence cleanup
+  var staleFiles = ['phase3-run-1.json', 'phase3-run-2.json', 'phase3-run-3.json', 'playthrough-result.json'];
+  for (var sfi = 0; sfi < staleFiles.length; sfi++) {
+    var sfPath = path.join(RESULT_DIR, staleFiles[sfi]);
+    try { if (fs.existsSync(sfPath)) { fs.unlinkSync(sfPath); console.log('   [CLEANUP] Deleted stale: ' + staleFiles[sfi]); } } catch (e) {}
+  }
+
   var runResults = [];
 
   for (var runIdx = 1; runIdx <= 3; runIdx++) {
@@ -1503,6 +1526,12 @@ async function runPhase3() {
     // Collect runtime errors (same aggregate list)
     var errs = await collectErrors(page);
     for (var ei = 0; ei < errs.length; ei++) allErrors.push(errs[ei]);
+
+    // Add identity fields to result
+    result.gitCommit = gitCommit;
+    result.acceptanceRunId = acceptanceRunId;
+    result.startedAt = new Date(result.startTime || Date.now()).toISOString();
+    result.finishedAt = new Date().toISOString();
 
     // Write JSON result
     var resultPath = path.join(RESULT_DIR, 'phase3-run-' + runIdx + '.json');
