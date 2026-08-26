@@ -144,7 +144,7 @@ export class PlayerCamera {
     this.bobSpeed += (speed - this.bobSpeed) * (1 - Math.exp(-10 * dt));
     this.bobPhase += this.bobSpeed * dt;
 
-    const bobAmp = this.bobSpeed > 0 ? 0.025 * bobMultiplier : 0;
+    const bobAmp = isMoving ? 0.025 * bobMultiplier : 0;
     this.bobOffset.x = Math.sin(this.bobPhase * 2) * bobAmp;
     this.bobOffset.y = Math.abs(Math.cos(this.bobPhase)) * bobAmp * 1.5;
 

@@ -1,62 +1,50 @@
 {
-  "run": 1,
-  "label": "Run1",
-  "startTime": 1787615499356,
-  "duration": 136.358,
-  "reachedVictory": true,
-  "deaths": 0,
-  "kills": 32,
-  "minPlayerHp": 4.624000000357627,
-  "damageReceived": 370.69653911953026,
-  "reloadCount": 0,
+  "run": "Run1",
+  "startTime": 1787717368464,
+  "duration": 84.739,
+  "reachedVictory": false,
+  "deaths": 1,
+  "kills": 20,
+  "minPlayerHp": 0,
+  "damageReceived": 100,
+  "reloadCount": 7,
   "ammoPickups": 0,
-  "crateAttempts": 0,
-  "lastCratePos": null,
   "waveTimes": {
     "1": {
-      "start": 1787615501950,
-      "end": 1787615512287,
-      "duration": "10.3"
+      "start": 1787717369042,
+      "end": 1787717388581,
+      "duration": "19.5"
     },
     "2": {
-      "start": 1787615524631,
-      "end": 1787615532864,
-      "duration": "8.2"
+      "start": 1787717391681,
+      "end": 1787717404611,
+      "duration": "12.9"
     },
     "3": {
-      "start": 1787615545453,
-      "end": 1787615555712,
-      "duration": "10.3"
+      "start": 1787717407716,
+      "end": 1787717420424,
+      "duration": "12.7"
     },
     "4": {
-      "start": 1787615567810,
-      "end": 1787615579276,
-      "duration": "11.5"
+      "start": 1787717423575,
+      "end": 1787717439919,
+      "duration": "16.3"
     },
     "5": {
-      "start": 1787615591508,
-      "end": 1787615605890,
-      "duration": "14.4"
-    },
-    "6": {
-      "start": 1787615618839,
-      "end": 1787615626127,
-      "duration": "7.3"
+      "start": 1787717442988,
+      "end": null,
+      "duration": null
     }
   },
-  "wavesCompleted": 6,
-  "shotsFired": 315,
-  "hits": 64,
-  "headshots": 59,
-  "damageDealt": 3444,
+  "wavesCompleted": 4,
+  "shotsFired": 210,
+  "hits": 41,
+  "headshots": 30,
+  "damageDealt": 1988,
   "killsByType": {
-    "rifleman": 16,
-    "rusher": 9,
-    "sniper": 6,
-    "boss": 1
-  },
-  "runtimeErrors": [],
-  "_diagCount": 3,
-  "ammoLeft": 30,
-  "reserveLeft": 10059
+    "rifleman": 10,
+    "rusher": 6,
+    "sniper": 4,
+    "boss": 0
+  }
 }
