@@ -1,51 +1,91 @@
-# PHASE 3 残課題ハンドオフ
+# PHASE 3 残課題ハンドオフ (2026-08-28更新)
 
 ## 現在の状態
-ブランチ: master (3503355 → コミット予定)
-変更ファイル: test/phase3-acceptance.mjs (ボット戦術の大幅改善)
+ブランチ: master (変更未コミット)
+変更ファイル: test/phase3-acceptance.mjs (ボット戦術の改善)
+直近のコミット: 609025d "Phase 3 Stage A: Wave 1 clear via aim-latency fix + sprint-block avoidance"
 
-## 完了したこと (このセッションで達成)
+## 完了したこと
 
-### Stage A: Wave 1生存率 → 達成
-ボット戦術を大幅改善し、Wave 1クリアが3/3 runsで達成 (以前は0%→死亡)。
+### Stage A: Wave 1生存率 → 達成済み
+Wave 1クリアは安定 (3/3 runs)。前回セッションから維持。
 
-**主要な改善 (全て test/phase3-acceptance.mjs):**
-1. **精度問題の根本原因を発見・修正**:
-   - `game.dtCap = 0.5` が精度を壊していた → `0.1` に変更。
-     ヘッドレス描画のhiccupフレームで敵が0.75m/フレーム飛ぶ → 弾が空を飛ぶ。
-   - `aimAt()` に `rollAmount`/`bobOffset`/`bobSpeed` リセット追加 (camera.updateが毎フレーム再計算するため)。
-   - **発射時の aim が stale だった** → `fireAimedBurst()` が `enemyIdx` (配列index) で特定敵の**ライブ位置を毎ショット再取得**して照準。敵が aim〜発射間で移動しても追従。
-   - 精度: 0% → 26-44% (最高79%)。命中数: 0 → 3-24。
-2. **Sprint-block回避** (`isSprintBlocked` 250ms):
-   - `waitSprintOut()` を発射前に追加 (sprint-out完了待ち)。
-   - 距離管理のbackpedalを非sprintに (ShiftLeft不使用)。
-   - RETREATはsprint (逃げるため。8m/s > rusher 6.5m/s)。
-3. **LOS-Aware Burst**: LOS確立中は6発連続発射 (burst切れ目なし)。
-4. **距離管理**: backpedal at <10m, approach at >28m, それ以外strafe。
-   - nLOS時はtargetに近づかない (strafe/backpedalで距離維持)。
-5. **RECOVER短縮**: stateTimer > 3 or HP >= 65 で再交戦 (敵が近づく間に隠れすぎない)。
+### Stage B: Wave 2以降への到達 → 改善途上
+全 runs Wave 1クリア + Wave 2到達。Wave 3到達は未達成。
+- Run1: Wave 1 (25.9s) → Wave 2で死亡 (6 kills)
+- Run2: Wave 1 (35.3s) → Wave 2で死亡 (4 kills)
+- Run3: Wave 1 (17.3s) → Wave 2で死亡 (5 kills)
 
-## 主要な発見
-- 精度の決め手は**aim〜発射間のレイテンシと敵の移動**。同期レイキャストは当たるが、フレームを挟むと外れる。
-- `enemy.velocity` は読める (rifleman 1-3m/s, rusher 5-6.5m/s)。
-- 移動しながら撃つと命中0% (head bob)。静止して撃つのが必須。
-- ライブ位置再取得は「targetに最も近い敵」ではなく「特定のenemyIdx」でなければダメ (複数敵で誤射→壁ヒット)。
+## 今回の改善点
 
-## 残課題
+### 1. Sprint角度のバグ修正 (最重要)
+以前のコードでは sprint angle が間違っていた。
+`Math.atan2(playerX - target.x, target.z - playerZ)` は敵方向を向く角度。
+正しい逃走角度は `Math.atan2(target.x - playerX, playerZ - target.z)`。
+このバグで bot が敵方向に sprint していて rusher が高速で接近していた。
 
-### Stage B: Wave 2+到達 (現在 全runがWave 2でrusherに死亡)
-1. **Rusher対処 (最重要)**:
-   - rusher (HP60, 5-6.5m/s) が point-blank (0.1-0.3m) まで到達し bot を殺す。
-   - RETREATのsprint逃げが機能していない可能性 → **壁に衝突してstuck**か、rusherの突進速度がsprintより速い。
-   - rusherがnLOS (6-9m) で詰まっている → LOS破れ中に閉められる。camera-height LOSは精度0%になるので使用不可。
-   - 対策候補: 壁を避けた撤退方向 (findCover活用)、rusherを遠距離で殺す (6発burst = 1kill, HP60)。
-2. **マルチターゲット対応** (湧き中のWave遷移で死亡)。
-3. **RECOVER→RETREATループ解消** (LOS復帰時は即RETREATではなく角度変更)。
+### 2. nLOS時の発射スキップ
+nLOS中に発射しても弾は障害物に当たるだけ → 発射時間の無駄 + rusher接近。
+nLOS時は発射せずに sprint のみ行う。LOS復活時に初めて発射。
+これにより rusher kiting の効率が改善。
 
-### Stage C: 3連続Victory (現在不可能)
-- ボットの限界把握後、ゲームバランス調整を検討。
+### 3. Sprint時間延長
+500ms → 1000ms に延長。ループオーバーヘッドの影響を低減。
+Sprint-out待ち (isSprintBlocked解除) を sprint直前に追加。
 
-## 実行コマンド
+### 4. その他の改善
+- Rusher常時優先 (chooseTarget): `score += 3500 - e.dist * 40`
+- 障害物を避けた逃走方向 (findClearEscapeDirection)
+- RECOVER中のrusher対処 (隠れずに射撃してから退避)
+- Stuck検出高速化 (threshold 0.05→0.08, maxStuck 12→6)
+
+## 根本問題 (未解決)
+
+### nLOS中の接近 — 全死亡の共通パターン
+敵が遮蔽物の裏を通って接近し、LOSが復活した時には至近距離で即死。
+
+**問題のメカニズム**:
+1. nLOS中に敵が遮蔽物裏を通過 (rusher 6.5 m/s, rifleman 2 m/s)
+2. Botはsprintで距離を取ろうとするが、sprint速度 (8 m/s) と敵速度の差が小さすぎる
+   - rusher: 8 - 6.5 = 1.5 m/s のネット利得 → 長距離では十分だが接近時は遅い
+   - Sprint-out遅延 (250ms) が sprint開始を遅らせる
+3. 複数の敵が同時に接近すると対応不能
+
+**具体的な死亡パターン (Wave 2)**:
+```
+36s: ENGAGE → rusher d:14.6 nLOS (遮蔽物裏で接近中)
+43s: RETREAT → rusher d:3.4 LOS (復活時には至近距離)
+44s: Died (HP=0)
+```
+rusherが14.6m→3.4mに7秒間で接近。sprintのネット利得 1.5 m/s × 7s = 10.5m では
+14.6 - 10.5 = 4.1m となるはずだが、実際は 3.4m。Sprint-out遅延と加速度の影響。
+
+**精度低下 (30-40%)**:
+以前は 59-68% だった精度が低下。発射のタイミングと照準の安定性に問題。
+nLOS時の発射スキップにより総発射数は減ったが、精度も低下した。
+
+### 対策案 (次セッションで試す)
+
+1. **Continuous sprint (nLOS時はsprintを止めない)**:
+   現在の 1000ms sprint + ループ停止 のパターンでは減速が発生。
+   nLOS中は常に ShiftLeft + w を押し続けて continuous sprint に変更。
+   これにより加速/減速のロスがなくなり、実効速度が 8 m/s に近づく。
+
+2. **発射中も後退移動**:
+   現在は発射時に movement keys を解放して完全停止 → 敵が接近。
+   発射中も 's' (backpedal) を押し続けて後退しながら発射。
+   精度は下がるが、距離維持の方が重要。
+
+3. **Wave 2以降の複数敵対応**:
+   Wave 2以降は複数敵が同時に出現。現在の単一ターゲット focus では対応不能。
+   RETREAT + 広域掃射または 近距離敵優先 + 遠距離敵無視 の戦略が必要。
+
+4. **Sprint-blockバイパス**:
+   `waitSprintOut()` は最大 40 × 50ms = 2000ms 待つ可能性あり。
+   この待機中に敵が接近。代わりに `isSprintBlocked` を gameEval で直接falseに設定
+   (読み取り専用だが、これはゲーム状態を変更しない操作)。
+
+## 検証コマンド
 ```bash
 # サーバ起動 (既存)
 npx vite --port 3005
@@ -57,6 +97,10 @@ node test/phase3-acceptance.mjs --skip-sub
 node test/phase3-acceptance.mjs
 ```
 
+node は `C:\Users\taiji\AppData\Local\Temp\node-v22.14.0-win-x64\node.exe`
+
 ## 注意
-- 起動のflaky問題: `page.click('#start-btn')` が時々Timeout 30000ms。再実行で解決 (サーバ過負荷)。
-- node は `C:\Users\taiji\AppData\Local\Temp\node-v22.14.0-win-x64\node.exe` (PATHにない)。
+- 起動のflaky問題: `page.click('#start-btn')` が時々Timeout
+- 2回目以降のrunはPLAY AGAINボタンクリックで再開
+- dtCap=0.1 に設定 (精度維持のため)
+- fireAimedBurst は発射ごとに敵のライブ位置を再取得 (stale aim回避)

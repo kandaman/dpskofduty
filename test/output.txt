@@ -1,0 +1,108 @@
+
+╔═════════════════════════════════════════════════════════╗
+║     PHASE 3 FINAL ACCEPTANCE — zero false positives    ║
+╚═════════════════════════════════════════════════════════╝
+   [SKIP] Sub-suite tests (--skip-sub flag)
+
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+▔
+PART 3: FULL SIX-WAVE PLAYTHROUGH (3 runs to Victory)
+▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+   [CLEANUP] Deleted stale: phase3-run-1.json
+
+-------------------------------------------------------
+  Run1 of 3
+-------------------------------------------------------
+   Loading game...
+   Game loaded, frames: true
+   [Run1] Wave 1 started naturally
+   [Run1] Wave 1 active (HP=100, Enemies=0, State=SEARCH)
+   [Run1] [3s] SEARCH -> ENGAGE (HP=100, E=1)
+   [Run1] [8s] ENGAGE -> RETREAT (HP=2.154846720619478, E=3)
+
+   DECISION LOG (last 6 entries):
+   [0.8s] W1 HP:100 SEARCH -> none d:999.0 a:30r:360 nLOS stuck:0
+   [1.6s] W1 HP:100 SEARCH -> none d:999.0 a:30r:360 nLOS stuck:0
+   [2.4s] W1 HP:100 ENGAGE -> rifleman d:21.1 a:30r:360 nLOS stuck:0
+   [3.9s] W1 HP:100 ENGAGE -> rifleman d:15.4 a:30r:360 LOS stuck:0
+   [6.0s] W1 HP:66.23396507294976 ENGAGE -> rifleman d:11.6 a:27r:360 LOS stuck:0
+   [8.2s] W1 HP:2.154846720619478 RETREAT -> rifleman d:11.1 a:24r:360 nLOS stuck:0
+   [Run1] Died (Wave 1, HP=0)
+
+   [Run1] === RESULT ===
+   Victory: NO
+   Waves completed: 0/6
+   Kills: 0, Deaths: 1
+   Duration: 10.5s
+   Reloads: 0, Ammo pickups: 0
+   Min HP: 0, DMG taken: 100
+   Shots: 6, Hits: 0, Headshots: 0, Acc: 0.0%
+
+-------------------------------------------------------
+  Run2 of 3
+-------------------------------------------------------
+   Clicking PLAY AGAIN...
+   [PASS] Score reset to 0 (was 0)
+   [PASS] HP reset to 100 (was 100)
+   [PASS] Ammo reset to 30 (was 30)
+   [PASS] Reserve ammo reset to 360 (was 360)
+   [PASS] Old enemies cleared (count=0)
+   [PASS] Wave manager in preparing state (was preparing)
+   [PASS] Wave reset to 0/1 (was 0)

@@ -170,7 +170,7 @@ var HP_THRESHOLD = {
   LOW: 20
 };
 
-// Threat priority: sniper > close rusher > low-HP > boss > rifleman
+// Threat priority: sniper > rusher (any range) > low-HP > boss > rifleman
 function chooseTarget(enemies, playerX, playerZ) {
   if (!enemies || enemies.length === 0) return null;
   var best = null;
@@ -180,8 +180,8 @@ function chooseTarget(enemies, playerX, playerZ) {
     var score = 0;
     // Sniper is top priority — high damage, low HP
     if (e.type === 'sniper') score += 5000;
-    // Rusher close is very dangerous
-    if (e.type === 'rusher' && e.dist < 12) score += 4000 - e.dist * 50;
+    // Rusher is ALWAYS high priority — they charge relentlessly
+    if (e.type === 'rusher') score += 3500 - e.dist * 40;
     // Low-HP enemies are quick kills
     if (e.hp < 30) score += 2000 + (100 - e.hp) * 5;
     // Boss is medium priority (unless low HP)
@@ -913,39 +913,80 @@ async function playThrough(page, runLabel) {
         isStrafing = false;
       }
 
-      // Fire if we have ammo, LOS, and are at a safe distance where we can
-      // stand still and shoot accurately. When too close, skip firing and
-      // let the distance management backpedal to restore range — firing while
-      // moving (head bob) misses, and standing still at close range lets the
-      // enemy swarm us.
-      if (ammo > 0 && !reloading && targetLos && dist >= 6) {
-        // Stop moving while firing — movement causes head bob and stale
-        // player positions that degrade aim accuracy between shots.
+      // ── FIRE / SPRINT DECISION ──
+      // For rushers, use kiting: fire burst → sprint away → repeat.
+      // Rushers are blind-fired (no LOS check) because they weave through
+      // obstacles. Sprint (8 m/s) > rusher (6.5 m/s) creates distance.
+      // For non-rusher targets, only fire when LOS is clear.
+
+      var shouldFire = ammo > 0 && !reloading && (targetLos || target.type === 'rusher');
+
+      if (target.type === 'rusher' && dist >= 6 && dist < 15) {
+        // ── RUSHER KITING ──
+        // Two modes:
+        //   LOS clear: fire 4 aimed shots, sprint 500ms
+        //   nLOS: skip fire (bullets hit obstacles), sprint 500ms only.
+        //     Sprinting is 8 m/s > rusher 6.5 m/s → net distance gain.
+        await releaseMovementKeys(page);
+
+        if (targetLos) {
+          // Fire 4 shots while LOS is clear
+          await waitSprintOut(page);
+          for (var rb = 0; rb < 4; rb++) {
+            var liveR = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+            if (!liveR) break;
+            await aimAt(page, liveR.x, liveR.z, 1.25);
+            await page.mouse.down();
+            await sleep(25);
+            await page.mouse.up();
+            await sleep(60);
+            var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
+            if (typeof liveAmmo === 'number' && liveAmmo <= 0) break;
+          }
+          await stopFiring(page);
+          isFiring = false;
+        }
+
+        // Sprint 1000ms directly away (8 m/s > 6.5 m/s rusher = net +1.5 m/s).
+        // Wait for sprint-out first so ShiftLeft isn't blocked by isSprintBlocked.
+        await waitSprintOut(page);
+        var sprintAngle = Math.atan2(target.x - playerX, playerZ - target.z);
+        await aimDirection(page, sprintAngle, 0);
+        await page.keyboard.down('w');
+        await page.keyboard.down('ShiftLeft');
+        await page.keyboard.up('s');
+        await sleep(1000);
+        await page.keyboard.up('ShiftLeft');
+        await page.keyboard.up('w');
+        isMovingAway = true;
+
+      } else if (shouldFire && dist >= 8) {
+        // ── STANDARD AIMED FIRE ──
         await releaseMovementKeys(page);
         isMovingAway = false;
-
-        // Sprint-block avoidance: wait for sprint-out so fire() isn't
-        // blocked by isSprintBlocked (250ms after releasing ShiftLeft).
         await waitSprintOut(page);
 
-        // LOS-Aware Burst: keep firing while LOS holds — no gap between
-        // shots so the enemy can't recover. Re-aim each shot for accuracy.
         var burstFired = await fireAimedBurst(page, target.idx, 6);
         var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
         if (typeof liveAmmo === 'number') ammo = liveAmmo;
         if (burstFired > 0) isFiring = true;
         else isFiring = false;
-      } else if (ammo > 0 && !reloading && targetLos && dist < 10) {
-        // Too close: backpedal to restore distance (no firing while moving).
-        await page.keyboard.down('s');
-        await page.keyboard.up('w');
-        await page.keyboard.up('a');
-        await page.keyboard.up('d');
+
+      } else if (!targetLos && dist < 10) {
+        // ── nLOS CLOSE: sprint directly away ──
+        if (isFiring) { await stopFiring(page); isFiring = false; }
+        var retreatThreat = nearestThreat || target;
+        var awayAngle = retreatThreat ? Math.atan2(retreatThreat.x - playerX, playerZ - retreatThreat.z) : Math.PI;
+        await aimDirection(page, awayAngle, 0);
+        await page.keyboard.down('w');
+        await page.keyboard.down('ShiftLeft');
+        await page.keyboard.up('s');
         isMovingAway = true;
-        await sleep(200);
+        await sleep(1000);
+        await page.keyboard.up('ShiftLeft');
+        await page.keyboard.up('w');
+
       } else {
-        // No LOS / no ammo / reloading: stop firing; distance management
-        // movement keys above still hold (backpedal if close, strafe if far).
         if (isFiring) { await stopFiring(page); isFiring = false; }
       }
 
