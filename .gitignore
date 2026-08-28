@@ -39,4 +39,9 @@ test-results/
 .mcp.json
 mcp_call.json
 mcp_init.json
+
+# RenderPeople assets (not redistributable — per license terms, raw 3D data
+# cannot be made publicly accessible. Developers must download individually.)
+public/assets/characters/rp_*.zip
 public/assets/characters/universal_base_characters.zip
+*.{0,200}
