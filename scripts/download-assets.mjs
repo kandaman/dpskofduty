@@ -1,79 +1,94 @@
 /**
- * Asset Downloader — downloads free CC0 assets for DPSK OF DUTY.
+ * PBR Texture Downloader — downloads complete PBR texture sets from Poly Haven (CC0).
  *
  * Usage: node scripts/download-assets.mjs
  *
- * Fetches from:
- *   - Poly Haven (CC0 HDRIs, textures)
- *   - ambientCG (CC0 PBR textures)
- *   - Quaternius assets (CC0 weapons, characters) via GitHub mirror
+ * Fetches full PBR map sets (diffuse, normal, roughness, AO)
+ * from Poly Haven for concrete, asphalt, dirt, and metal surfaces.
  *
- * Run this BEFORE first dev build to populate public/assets/
+ * URL pattern: https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/<asset>/<asset>_<map>_2k.jpg
  */
 
 import https from 'https';
-import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ASSETS_DIR = path.resolve(__dirname, '../public/assets');
+const ASSETS_DIR = path.resolve(__dirname, '../public/assets/textures');
 
-const ASSETS = {
-  hdri: [
-    {
-      name: 'industrial_sunset_2k.hdr',
-      url: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/industrial_sunset_puresky_2k.hdr',
-      license: 'CC0',
-      source: 'Poly Haven'
-    }
-  ],
-  textures: [
-    // Concrete
-    { name: 'Concrete042_2K_BaseColor.jpg', url: 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_plaster_02_2k_jpg.jpg', license: 'CC0', source: 'Poly Haven' },
-    { name: 'Concrete042_2K_Normal.jpg', url: '', license: 'CC0', source: 'Poly Haven (normal from height)' },
-    // Asphalt
-    { name: 'Asphalt01_2K_BaseColor.jpg', url: 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_01_2k_jpg.jpg', license: 'CC0', source: 'Poly Haven' },
-    // Metal
-    { name: 'Metal05_2K_BaseColor.jpg', url: 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/metal_armor_01_2k_jpg.jpg', license: 'CC0', source: 'Poly Haven' },
-    // Fabric
-    { name: 'Fabric01_2K_BaseColor.jpg', url: 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/fabric_02_2k_jpg.jpg', license: 'CC0', source: 'Poly Haven' },
-  ]
+// Map type → filename suffix used in Poly Haven URLs
+const MAP_FILE = {
+  Diffuse:      'diff',
+  nor_gl:       'nor_gl',
+  Rough:        'rough',
+  AO:           'ao',
+  Displacement: 'disp',
 };
+
+const TEXTURE_SETS = [
+  // Concrete / Floor
+  { asset: 'brushed_concrete',       maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Brushed Concrete' },
+  { asset: 'anti_slip_concrete',     maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Anti-Slip Concrete' },
+  { asset: 'concrete_floor_02',      maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Concrete Floor 02' },
+  { asset: 'concrete_floor_damaged_01', maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'], label: 'Damaged Concrete' },
+  { asset: 'concrete_floor_worn_02', maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Worn Concrete Floor' },
+  // Asphalt
+  { asset: 'asphalt_floor',          maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Asphalt Floor' },
+  { asset: 'asphalt_01',             maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Asphalt 01' },
+  // Dirt / Ground
+  { asset: 'dry_ground_01',          maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Dry Ground' },
+  { asset: 'forest_ground_04',       maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Forest Ground' },
+  { asset: 'burned_ground_01',       maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Burned Ground' },
+  { asset: 'dirty_concrete',         maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Dirty Concrete' },
+  // Metal
+  { asset: 'metal_plate',            maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Metal Plate' },
+  { asset: 'metal_plate_02',         maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Metal Plate 02' },
+  { asset: 'blue_metal_plate',       maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Blue Metal Plate' },
+  { asset: 'rusty_metal',            maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Rusty Metal' },
+  { asset: 'rusted_iron',            maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Rusted Iron' },
+  // Wood
+  { asset: 'wood_floor',             maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Wood Floor' },
+  { asset: 'wood_planks',            maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Wood Planks' },
+  { asset: 'old_wooden_floor_01',    maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Old Wooden Floor' },
+  { asset: 'wood_planks_dirt',       maps: ['Diffuse', 'nor_gl', 'Rough', 'AO'],  label: 'Wood Planks Dirt' },
+];
+
+const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k';
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
-    if (!url) {
-      resolve({ size: 0, url: '' });
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 1000) {
+      resolve({ size: fs.statSync(dest).size, cached: true });
       return;
     }
+    const dir = path.dirname(dest);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const file = fs.createWriteStream(dest);
-    const proto = url.startsWith('https') ? https : http;
-    proto.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-      // Follow redirect
+    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
         fs.unlink(dest, () => {});
-        console.log(`  -> redirect to ${res.headers.location}`);
         download(res.headers.location, dest).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        file.close();
+        fs.unlink(dest, () => {});
+        reject(new Error(`HTTP ${res.statusCode}`));
         return;
       }
       const total = parseInt(res.headers['content-length'] || '0', 10);
       let downloaded = 0;
       res.on('data', (chunk) => {
         downloaded += chunk.length;
-        if (total > 0) {
-          const pct = Math.round((downloaded / total) * 100);
-          process.stdout.write(`\r  ${downloaded}/${total} bytes (${pct}%)`);
-        }
+        if (total > 0) process.stdout.write(`\r    ${Math.round((downloaded / total) * 100)}%`);
       });
       res.pipe(file);
       file.on('finish', () => {
         file.close();
         process.stdout.write('\n');
-        const size = fs.statSync(dest).size;
-        resolve({ size, url });
+        resolve({ size: fs.statSync(dest).size, cached: false });
       });
     }).on('error', (err) => {
       fs.unlink(dest, () => {});
@@ -83,65 +98,46 @@ function download(url, dest) {
 }
 
 async function main() {
-  console.log('=== DPSK OF DUTY - Asset Downloader ===\n');
-  console.log(`Assets directory: ${ASSETS_DIR}\n`);
+  console.log('=== PBR Texture Downloader ===\n');
+  console.log(`Target: ${ASSETS_DIR}\n`);
 
-  // Ensure dirs exist
-  for (const dir of ['hdri', 'textures', 'weapons', 'characters', 'environment', 'props', 'vegetation', 'decals']) {
-    const dirPath = path.join(ASSETS_DIR, dir);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+  if (!fs.existsSync(ASSETS_DIR)) {
+    fs.mkdirSync(ASSETS_DIR, { recursive: true });
+  }
+
+  let totalFiles = 0;
+  let totalBytes = 0;
+
+  for (const set of TEXTURE_SETS) {
+    console.log(`\n--- ${set.label} ---`);
+
+    for (const mapType of set.maps) {
+      const mapSuffix = MAP_FILE[mapType];
+      const filename = `${set.asset}_${mapSuffix}_2k.jpg`;
+      const url = `${PH_BASE}/${set.asset}/${set.asset}_${mapSuffix}_2k.jpg`;
+      const dest = path.join(ASSETS_DIR, filename);
+
+      if (fs.existsSync(dest)) {
+        const size = fs.statSync(dest).size;
+        console.log(`  [HAVE] ${filename} (${(size / 1024).toFixed(0)}KB)`);
+        totalBytes += size;
+        totalFiles++;
+        continue;
+      }
+
+      process.stdout.write(`  [DL]    ${filename}`);
+      try {
+        const result = await download(url, dest);
+        totalFiles++;
+        totalBytes += result.size;
+        console.log(`  [OK] ${(result.size / 1024).toFixed(0)}KB`);
+      } catch (err) {
+        console.log(`  [FAIL] ${err.message}`);
+      }
     }
   }
 
-  // Download HDRIs
-  console.log('--- HDRIs ---');
-  for (const asset of ASSETS.hdri) {
-    const dest = path.join(ASSETS_DIR, 'hdri', asset.name);
-    if (fs.existsSync(dest)) {
-      console.log(`  [SKIP] ${asset.name} (already exists)`);
-      continue;
-    }
-    console.log(`  [DL] ${asset.name} (${asset.license}, ${asset.source})`);
-    try {
-      const result = await download(asset.url, dest);
-      console.log(`  [OK] ${result.size} bytes`);
-    } catch (err) {
-      console.log(`  [FAIL] ${err.message}`);
-    }
-  }
-
-  // Download textures
-  console.log('\n--- PBR Textures ---');
-  for (const asset of ASSETS.textures) {
-    const dest = path.join(ASSETS_DIR, 'textures', asset.name);
-    if (fs.existsSync(dest) || !asset.url) {
-      if (!asset.url) console.log(`  [INFO] ${asset.name}: ${asset.source}`);
-      else console.log(`  [SKIP] ${asset.name} (already exists)`);
-      continue;
-    }
-    console.log(`  [DL] ${asset.name} (${asset.license}, ${asset.source})`);
-    try {
-      const result = await download(asset.url, dest);
-      console.log(`  [OK] ${result.size} bytes`);
-    } catch (err) {
-      console.log(`  [FAIL] ${err.message}`);
-    }
-  }
-
-  // Print instructions for manual downloads
-  console.log('\n=== Manual Download Instructions ===');
-  console.log('\nThe following assets require manual download from GitHub:');
-  console.log('\n1. Weapon: Quaternius UltimateWeapons (CC0)');
-  console.log('   URL: https://github.com/AlizawaDev/UltimateWeapons');
-  console.log('   File: UltimateWeapons.glb -> public/assets/weapons/');
-  console.log('\n2. Character: Quaternius Tactical Human (CC0)');
-  console.log('   URL: https://github.com/nadaski/Quaternius');
-  console.log('   File: UltimateAnimatedPeople/UAP_Tactical.glb -> public/assets/characters/');
-  console.log('\n3. More CC0 textures: ambientCG.com');
-  console.log('   URL: https://ambientcg.com');
-  console.log('   Download JPG 2K versions -> public/assets/textures/');
-  console.log('\n=== Done ===\n');
+  console.log(`\n=== Done: ${totalFiles} files, ${(totalBytes / 1024 / 1024).toFixed(1)}MB ===`);
 }
 
 main().catch(console.error);

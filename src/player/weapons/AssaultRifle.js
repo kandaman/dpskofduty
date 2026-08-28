@@ -83,11 +83,13 @@ export class AssaultRifle {
         this.game.assetManager.loadAssetTexture(`${fbDir}/M4A1_Roughness.png`),
       ]);
 
-      // Configure texture channels
+      // Configure texture channels:
+      //   BaseColor → sRGB (colour data, gamma-corrected)
+      //   Normal/Metallic/Roughness/Height → NoColorSpace (tangent-space data, not colour)
       baseColor.colorSpace = THREE.SRGBColorSpace;
-      normal.colorSpace = THREE.LinearSRGBColorSpace;
-      metallic.colorSpace = THREE.LinearSRGBColorSpace;
-      roughness.colorSpace = THREE.LinearSRGBColorSpace;
+      normal.colorSpace = THREE.NoColorSpace;
+      metallic.colorSpace = THREE.NoColorSpace;
+      roughness.colorSpace = THREE.NoColorSpace;
 
       // Apply PBR material to every mesh in the FBX group
       fbxGroup.traverse((child) => {
@@ -118,8 +120,9 @@ export class AssaultRifle {
       });
 
       // Scale and position for first-person view
+      // Centered under camera: slightly right, below center, forward
       fbxGroup.scale.set(0.55, 0.55, 0.55);
-      fbxGroup.position.set(0.30, -0.25, -0.50);
+      fbxGroup.position.set(0.08, -0.18, -0.35);
       fbxGroup.rotation.set(0, 0, 0);
 
       // Apply environment map if already loaded
