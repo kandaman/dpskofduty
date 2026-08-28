@@ -36,3 +36,6 @@ test/*-screenshots/
 test/results/
 test-results/
 .claude/scheduled_tasks.lock
+.mcp.json
+mcp_call.json
+mcp_init.json
