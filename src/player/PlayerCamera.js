@@ -185,13 +185,23 @@ export class PlayerCamera {
     }
 
     // --- Apply camera rotation ---
-    const euler = new THREE.Euler(
-      this.pitch + this.bobOffset.y * 0.5 + this.shakeOffset.y,
-      this.yaw,
-      this.rollAmount + this.shakeOffset.x * 0.5,
-      'YXZ'
-    );
-    this.camera.quaternion.setFromEuler(euler);
+    // Build rotation via quaternion multiplication to avoid gimbal lock
+    // when pitch approaches ±90° (which causes Y and Z axes to align with Euler).
+    const q = new THREE.Quaternion();
+    // Yaw: world-space Y-axis rotation
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
+    this.camera.quaternion.copy(q);
+    // Pitch: local-space X-axis rotation (after yaw)
+    q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.pitch);
+    this.camera.quaternion.multiply(q);
+    // Roll + bob + shake: local Z then small corrections
+    const rollTotal = this.rollAmount + this.shakeOffset.x * 0.5;
+    q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollTotal);
+    this.camera.quaternion.multiply(q);
+    // Additive bob pitch offset (gentle, so quaternion is fine)
+    const bobPitch = this.bobOffset.y * 0.5 + this.shakeOffset.y;
+    q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), bobPitch);
+    this.camera.quaternion.multiply(q);
 
     // --- Compute position offset (added to player position by PlayerController) ---
     this.positionOffset.x = this.bobOffset.x + this.shakeOffset.x * 0.5;
