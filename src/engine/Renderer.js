@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export class Renderer {
   constructor(game) {
     this.game = game;
+    this._quality = 'ULTRA'; // default highest quality
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -10,14 +11,27 @@ export class Renderer {
       stencil: false,
       depth: true
     });
+
+    // Pixel ratio: cap at 2 for performance (set to 1 for MEDIUM)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Shadow configuration
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // Tone mapping — ACES Filmic for filmic contrast curve
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.2;
+    this.renderer.toneMappingExposure = 1.5;
+
+    // Color space (default in r152+, explicit for safety)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    // Modern lighting model — physically correct falloff
     this.renderer.useLegacyLights = false;
+
+    // Shadow bias correction for the renderer level
+    this.renderer.shadowMap.bias = 0;
 
     document.body.prepend(this.renderer.domElement);
 
@@ -25,10 +39,34 @@ export class Renderer {
       const w = window.innerWidth;
       const h = window.innerHeight;
       this.renderer.setSize(w, h);
-      this.game.camera.aspect = w / h;
-      this.game.camera.updateProjectionMatrix();
+      if (this.game.camera) {
+        this.game.camera.camera.aspect = w / h;
+        this.game.camera.camera.updateProjectionMatrix();
+      }
     };
     window.addEventListener('resize', this.resizeHandler);
+  }
+
+  /**
+   * Set quality level — adjusts pixel ratio, tone mapping, and shadow settings.
+   * @param {'ULTRA'|'HIGH'|'MEDIUM'} level
+   */
+  setQuality(level) {
+    this._quality = level;
+    switch (level) {
+      case 'ULTRA':
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.toneMappingExposure = 1.0;
+        break;
+      case 'HIGH':
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.renderer.toneMappingExposure = 1.0;
+        break;
+      case 'MEDIUM':
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+        this.renderer.toneMappingExposure = 0.9;
+        break;
+    }
   }
 
   render(scene, camera) {

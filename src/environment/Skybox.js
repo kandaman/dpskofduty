@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+/**
+ * Skybox — procedural daytime atmosphere with Rayleigh scattering.
+ *
+ * Produces a realistic sky gradient with sun disk, atmospheric glow,
+ * and horizon haze that matches the scene fog for seamless distance fade.
+ * The sky color palette is a desert/war-theater late afternoon.
+ */
 export class Skybox {
   constructor(scene) {
     this.scene = scene;
@@ -7,53 +14,77 @@ export class Skybox {
   }
 
   _build() {
-    // --- Gradient sky dome ---
+    // ─── PROCEDURAL ATMOSPHERE (Rayleigh-like scattering) ──────────────
     const vertShader = `
       varying vec3 vWorldPosition;
+      varying vec3 vNormal;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPosition = worldPos.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `;
+
     const fragShader = `
       uniform vec3 topColor;
       uniform vec3 bottomColor;
       uniform vec3 sunColor;
       uniform vec3 sunDirection;
+      uniform vec3 horizonColor;
+      uniform vec3 fogColor;
       varying vec3 vWorldPosition;
 
       void main() {
         vec3 viewDir = normalize(vWorldPosition);
-        float gradient = max(0.0, viewDir.y);
+        float heightFactor = max(0.0, viewDir.y);
 
-        // Sky gradient
-        vec3 sky = mix(bottomColor, topColor, gradient);
+        // Sky gradient base
+        vec3 sky = mix(bottomColor, topColor, heightFactor);
+
+        // Add atmospheric scattering (blue at zenith, warm at horizon)
+        vec3 rayleigh = vec3(0.5, 0.7, 0.9);
+        float scattering = 1.0 - heightFactor;
+        sky = mix(sky, rayleigh, scattering * 0.15);
+
+        // Sun direction
+        vec3 sunDir = normalize(sunDirection);
+        float sunAngle = dot(viewDir, sunDir);
+
+        // Sun glow (large warm halo)
+        float sunGlow = pow(max(0.0, sunAngle), 16.0);
+        sky += sunColor * sunGlow * 0.5;
 
         // Sun disk
-        float sunAngle = dot(viewDir, normalize(sunDirection));
-        float sunDisk = smoothstep(0.9995, 1.0, sunAngle);
-        sky += sunColor * sunDisk * 0.5;
+        float sunDisk = smoothstep(0.998, 1.0, sunAngle);
+        sky += vec3(1.0, 0.95, 0.8) * sunDisk * 3.0;
 
-        // Sun glow
-        float sunGlow = pow(max(0.0, sunAngle), 64.0);
-        sky += sunColor * sunGlow * 0.15;
-
-        // Horizon haze
-        float horizonGlow = pow(1.0 - abs(viewDir.y), 8.0);
-        sky += vec3(0.8, 0.6, 0.3) * horizonGlow * 0.1;
+        // Horizon haze band
+        float horizonBand = pow(1.0 - heightFactor, 5.0);
+        sky = mix(sky, horizonColor, horizonBand * 0.5);
 
         gl_FragColor = vec4(sky, 1.0);
       }
     `;
 
-    const skyGeo = new THREE.SphereGeometry(800, 32, 24);
+    // Late afternoon military theater palette — warm, dusty
+    const topColor = new THREE.Color(0x2a6ea5);      // deep blue
+    const bottomColor = new THREE.Color(0xc8b898);   // warm dust near horizon
+    const sunColor = new THREE.Color(0xffc888);       // warm sun
+    const horizonColor = new THREE.Color(0xc8b898);  // dust haze
+    const fogColor = new THREE.Color(0x8a9ba8);      // matches scene fog
+
+    const sunDir = new THREE.Vector3(-0.3, 0.5, 0.7).normalize(); // ~30° elevation
+
+    const skyGeo = new THREE.SphereGeometry(800, 48, 32);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        topColor: { value: new THREE.Color(0x0a0a1a) },
-        bottomColor: { value: new THREE.Color(0x1a1a2e) },
-        sunColor: { value: new THREE.Color(0xff8844) },
-        sunDirection: { value: new THREE.Vector3(0.3, 0.6, 0.5).normalize() }
+        topColor: { value: topColor },
+        bottomColor: { value: bottomColor },
+        sunColor: { value: sunColor },
+        sunDirection: { value: sunDir },
+        horizonColor: { value: horizonColor },
+        fogColor: { value: fogColor }
       },
       vertexShader: vertShader,
       fragmentShader: fragShader,
@@ -65,90 +96,94 @@ export class Skybox {
     this.sky.name = 'skybox';
     this.scene.add(this.sky);
 
-    // --- Stars ---
-    this._createStars();
+    // ─── CLOUDS (thin, wispy) ──────────────────────────────────────────
+    this._createClouds();
 
-    // --- Distant fog particles (moonlight scattering) ---
-    this._createAtmosphericHaze();
+    // ─── DISTANT HAZE ──────────────────────────────────────────────────
+    this._createHaze();
   }
 
-  _createStars() {
-    const starCount = 3000;
-    const positions = new Float32Array(starCount * 3);
-    const sizes = new Float32Array(starCount);
-    const colors = new Float32Array(starCount * 3);
+  _createClouds() {
+    // Thin cloud layer using semi-transparent sprites
+    const cloudTexture = this._generateCloudTexture();
 
-    for (let i = 0; i < starCount; i++) {
-      // Random points on a sphere
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = 750 + Math.random() * 50;
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.cos(phi);
-      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-
-      sizes[i] = 0.5 + Math.random() * 1.5;
-
-      const brightness = 0.3 + Math.random() * 0.7;
-      const temp = Math.random();
-      if (temp > 0.95) {
-        // Blue star
-        colors[i * 3] = brightness * 0.6;
-        colors[i * 3 + 1] = brightness * 0.7;
-        colors[i * 3 + 2] = brightness;
-      } else if (temp > 0.85) {
-        // Orange star
-        colors[i * 3] = brightness;
-        colors[i * 3 + 1] = brightness * 0.6;
-        colors[i * 3 + 2] = brightness * 0.3;
-      } else {
-        colors[i * 3] = brightness;
-        colors[i * 3 + 1] = brightness;
-        colors[i * 3 + 2] = brightness;
-      }
-    }
-
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    starGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const starMat = new THREE.PointsMaterial({
-      size: 1.5,
-      vertexColors: true,
+    const cloudMat = new THREE.SpriteMaterial({
+      map: cloudTexture,
       transparent: true,
-      opacity: 0.9,
-      sizeAttenuation: true,
+      opacity: 0.15,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
-      blending: THREE.AdditiveBlending
+      color: 0xeeeedd
     });
 
-    this.stars = new THREE.Points(starGeo, starMat);
-    this.stars.name = 'stars';
-    this.scene.add(this.stars);
+    this.clouds = [];
+    const cloudCount = 60;
+    for (let i = 0; i < cloudCount; i++) {
+      const sprite = new THREE.Sprite(cloudMat.clone());
+
+      // Distribute clouds in a ring at height ~60-80
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 80 + Math.random() * 200;
+      const height = 50 + Math.random() * 50;
+      sprite.position.set(
+        Math.cos(angle) * dist,
+        height,
+        Math.sin(angle) * dist
+      );
+
+      const size = 30 + Math.random() * 80;
+      sprite.scale.set(size, size * 0.4, 1);
+      sprite.material.opacity = 0.05 + Math.random() * 0.15;
+
+      this.clouds.push(sprite);
+      this.scene.add(sprite);
+    }
   }
 
-  _createAtmosphericHaze() {
-    const hazeCount = 500;
+  _generateCloudTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    // Soft cloud blob
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.2, 'rgba(255,255,255,0.6)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  _createHaze() {
+    // Subtle atmospheric haze particles
+    const hazeCount = 200;
     const positions = new Float32Array(hazeCount * 3);
+    const sizes = new Float32Array(hazeCount);
 
     for (let i = 0; i < hazeCount; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const dist = 100 + Math.random() * 300;
+      const dist = 50 + Math.random() * 400;
       positions[i * 3] = Math.cos(angle) * dist;
-      positions[i * 3 + 1] = 10 + Math.random() * 80;
+      positions[i * 3 + 1] = 5 + Math.random() * 40;
       positions[i * 3 + 2] = Math.sin(angle) * dist;
+      sizes[i] = 10 + Math.random() * 20;
     }
 
     const hazeGeo = new THREE.BufferGeometry();
     hazeGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    hazeGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
     const hazeMat = new THREE.PointsMaterial({
       size: 15,
-      color: 0x444466,
+      color: 0xc8b898,
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.04,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       sizeAttenuation: true
@@ -160,9 +195,15 @@ export class Skybox {
   }
 
   update(dt) {
-    // Slow rotation for atmosphere
+    // Slow cloud drift and haze rotation
+    if (this.clouds) {
+      for (const cloud of this.clouds) {
+        cloud.position.x += dt * 0.3;
+        if (cloud.position.x > 300) cloud.position.x = -300;
+      }
+    }
     if (this.haze) {
-      this.haze.rotation.y += dt * 0.002;
+      this.haze.rotation.y += dt * 0.001;
     }
   }
 }

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Renderer } from './engine/Renderer.js';
 import { InputManager } from './engine/InputManager.js';
 import { AudioManager } from './engine/AudioManager.js';
+import { MaterialManager } from './engine/MaterialManager.js';
 import { PlayerCamera } from './player/PlayerCamera.js';
 import { PlayerController } from './player/PlayerController.js';
 import { WeaponController } from './player/WeaponController.js';
@@ -24,10 +25,10 @@ export class Game {
 
     // Core
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
 
-    // Systems
+    // Systems (order: material manager first so textures are ready for level/weapons)
     this.input = new InputManager();
+    this.materials = new MaterialManager();
     this.camera = new PlayerCamera(this);
     this.renderer = new Renderer(this);
     this.audio = new AudioManager(this.camera.camera);
@@ -38,7 +39,7 @@ export class Game {
 
     // Level
     this.lighting = new Lighting(this.scene);
-    this.level = new Level(this.scene);
+    this.level = new Level(this.scene, this.materials);
     this.skybox = new Skybox(this.scene);
 
     // Share obstacle meshes with enemy manager

@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+/**
+ * WeaponSway — realistic weapon positioning with inertia.
+ *
+ * The weapon has mass and lags behind camera motion rather than tracking
+ * perfectly. Includes: mouse-driven sway, breath sway, sprint lowering,
+ * ADS positioning, and head bob influence.
+ */
 export class WeaponSway {
   constructor(game) {
     this.game = game;
@@ -31,6 +38,12 @@ export class WeaponSway {
 
     // Bob influence
     this.bobInfluence = new THREE.Vector3();
+
+    // Weapon inertia — simulates mass
+    this._inertiaPosition = new THREE.Vector3();
+    this._inertiaRotation = new THREE.Euler();
+    this._prevYawVel = 0;
+    this._prevPitchVel = 0;
   }
 
   update(dt, weaponObject) {
@@ -38,10 +51,11 @@ export class WeaponSway {
 
     const camera = this.game.camera;
 
-    // --- Mouse sway (uses camera velocity, already consumed by camera update) ---
+    // --- Mouse velocity (from camera) ---
     const yawVel = camera.velocity.yaw;
     const pitchVel = camera.velocity.pitch;
 
+    // --- Compute target sway from mouse input ---
     this.rotationTarget.x = pitchVel * 1.5;
     this.rotationTarget.y = yawVel * 1.5;
     this.rotationTarget.z = -yawVel * 0.3;
@@ -49,13 +63,22 @@ export class WeaponSway {
     this.positionTarget.x = -yawVel * 0.03;
     this.positionTarget.y = -pitchVel * 0.03;
 
-    // --- Smooth sway ---
+    // --- Smooth sway (the weapon follows camera with lag) ---
     this.positionSway.x += (this.positionTarget.x - this.positionSway.x) * (1 - Math.exp(-this.positionSwaySmoothing * dt));
     this.positionSway.y += (this.positionTarget.y - this.positionSway.y) * (1 - Math.exp(-this.positionSwaySmoothing * dt));
 
     this.rotationSway.x += (this.rotationTarget.x - this.rotationSway.x) * (1 - Math.exp(-this.swaySmoothing * dt));
     this.rotationSway.y += (this.rotationTarget.y - this.rotationSway.y) * (1 - Math.exp(-this.swaySmoothing * dt));
     this.rotationSway.z += (this.rotationTarget.z - this.rotationSway.z) * (1 - Math.exp(-this.swaySmoothing * dt));
+
+    // --- Weapon inertia (mass effect — weapon lags behind acceleration) ---
+    const yawAccel = (yawVel - this._prevYawVel) * 0.005;
+    const pitchAccel = (pitchVel - this._prevPitchVel) * 0.005;
+    this._prevYawVel = yawVel;
+    this._prevPitchVel = pitchVel;
+
+    this._inertiaPosition.x += (yawAccel * 0.1 - this._inertiaPosition.x) * (1 - Math.exp(-3 * dt));
+    this._inertiaPosition.y += (pitchAccel * 0.1 - this._inertiaPosition.y) * (1 - Math.exp(-3 * dt));
 
     // --- Breath sway ---
     this.breathPhase += dt * 2.5;
@@ -72,7 +95,7 @@ export class WeaponSway {
     // --- ADS positioning ---
     const adsAmount = camera.adsAmount;
 
-    // Final position
+    // --- Final position ---
     const basePos = this.defaultPosition.clone();
     const adsPos = this.defaultPosition.clone().add(this.adsOffset);
 
@@ -82,17 +105,18 @@ export class WeaponSway {
       .lerpVectors(basePos, adsPos, adsAmount)
       .add(this.positionSway)
       .add(sprintOffset)
-      .add(new THREE.Vector3(breathX, breathY, 0));
+      .add(new THREE.Vector3(breathX, breathY, 0))
+      .add(this._inertiaPosition);
 
     // Bob influence
     finalPos.x += camera.bobOffset.x * 0.5;
     finalPos.y += camera.bobOffset.y * -0.3;
 
-    // Final rotation
+    // --- Final rotation ---
     const finalRot = new THREE.Euler(
-      this.rotationSway.x + this.sprintRotation * 0.5,
+      this.rotationSway.x + this.sprintRotation * 0.5 + this._inertiaPosition.y * 0.3,
       this.rotationSway.y + this.sprintRotation,
-      this.rotationSway.z
+      this.rotationSway.z + this._inertiaPosition.x * 0.5
     );
 
     // Apply to weapon

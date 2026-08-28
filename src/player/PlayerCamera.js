@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export class PlayerCamera {
   constructor(game) {
     this.game = game;
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 2000);
     this.camera.position.set(0, 1.7, 0);
 
     // View angles

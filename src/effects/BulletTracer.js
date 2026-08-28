@@ -1,29 +1,37 @@
 import * as THREE from 'three';
 
+/**
+ * BulletTracer — visual bullet streak with glow.
+ *
+ * Shows a brief bright line with a glowing head that follows the bullet
+ * trajectory. Designed to be visible but not overwhelming.
+ * In military shooters, tracers typically appear every 3rd-5th round,
+ * but here we show every round for gameplay readability.
+ */
 export class BulletTracer {
   constructor(scene) {
     this.scene = scene;
     this.tracers = [];
 
-    // Tracer material
-    this.tracerMat = new THREE.MeshBasicMaterial({
+    // Shared materials
+    this.tracerMat = new THREE.LineBasicMaterial({
       color: 0xffdd88,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.7,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
 
-    // Glow material for tracer head
     this.glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffeeaa,
+      color: 0xffcc66,
       transparent: true,
-      opacity: 0.8,
-      blending: THREE.AdditiveBlending
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
     });
   }
 
-  addTracer(origin, direction, speed = 120, length = 2) {
+  addTracer(origin, direction, speed = 120, length = 3) {
     const segments = Math.floor(length / 0.3);
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array((segments + 1) * 3);
@@ -37,28 +45,18 @@ export class BulletTracer {
       positions[i * 3] = pos.x;
       positions[i * 3 + 1] = pos.y;
       positions[i * 3 + 2] = pos.z;
-      alphas[i] = 1 - (i / segments);
+      alphas[i] = 1 - (i / segments) * 0.8;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
 
-    const tracer = new THREE.Line(
-      geometry,
-      new THREE.LineBasicMaterial({
-        color: 0xffdd88,
-        transparent: true,
-        opacity: 0.7,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        linewidth: 2
-      })
-    );
+    const tracer = new THREE.Line(geometry, this.tracerMat.clone());
 
-    // Add glow point at head
+    // Larger glow at tracer head
     const glow = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 4, 4),
-      this.glowMat
+      new THREE.SphereGeometry(0.06, 6, 6),
+      this.glowMat.clone()
     );
     glow.position.copy(origin);
 
@@ -81,10 +79,10 @@ export class BulletTracer {
       const t = this.tracers[i];
       t.age += dt;
 
-      // Move head
+      // Move head along trajectory
       t.headPos.add(t.velocity.clone().multiplyScalar(dt));
 
-      // Update line positions
+      // Update line positions to follow head
       const positions = t.line.geometry.attributes.position.array;
       const segCount = (positions.length / 3) - 1;
       for (let j = 0; j <= segCount; j++) {
@@ -96,11 +94,11 @@ export class BulletTracer {
       }
       t.line.geometry.attributes.position.needsUpdate = true;
 
-      // Update glow
+      // Update glow position
       t.glow.position.copy(t.headPos);
-      t.glow.material.opacity = 0.8 * (1 - t.age / t.life);
+      t.glow.material.opacity = 0.9 * (1 - t.age / t.life);
 
-      // Fade out
+      // Fade out the trail
       t.line.material.opacity = 0.7 * (1 - t.age / t.life);
 
       if (t.age >= t.life) {

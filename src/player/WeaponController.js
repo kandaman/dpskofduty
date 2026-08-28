@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AssaultRifle } from './weapons/AssaultRifle.js';
 import { WeaponSway } from './WeaponSway.js';
+import { generateMuzzleFlashTexture } from '../engine/TextureGenerator.js';
 
 export class WeaponController {
   constructor(game) {
@@ -48,6 +49,8 @@ export class WeaponController {
 
     // Muzzle flash
     this.muzzleLight = null;
+    this._muzzleFlashSprite = null;
+    this._muzzleFlashFlashTime = 0;
 
     // Shell ejection
     this.shells = [];
@@ -74,6 +77,26 @@ export class WeaponController {
     // Muzzle flash light
     this.muzzleLight = new THREE.PointLight(0xffaa33, 0, 5);
     this.weaponGroup.add(this.muzzleLight);
+
+    // Muzzle flash sprite
+    this._muzzleFlashSprite = this._createMuzzleFlashSprite();
+    this.weaponGroup.add(this._muzzleFlashSprite);
+  }
+
+  _createMuzzleFlashSprite() {
+    const tex = generateMuzzleFlashTexture();
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      color: 0xffdd88
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(0, -0.02, -0.65);
+    sprite.scale.set(0.1, 0.1, 1);
+    return sprite;
   }
 
   getCurrentWeapon() {
@@ -254,6 +277,13 @@ export class WeaponController {
     this.muzzleLight.intensity = 10;
     this.muzzleLight.color.setHSL(0.1, 1, 0.5);
 
+    // Show muzzle flash sprite
+    if (this._muzzleFlashSprite) {
+      this._muzzleFlashSprite.material.opacity = 1;
+      this._muzzleFlashSprite.scale.set(0.3, 0.3, 1);
+      this._muzzleFlashFlashTime = 0.05;
+    }
+
     // Expand crosshair on fire
     const cross = document.querySelectorAll('#crosshair .line');
     const expandAmount = 6;
@@ -273,15 +303,43 @@ export class WeaponController {
     const weapon = this.currentWeapon;
     if (!weapon.shellEjectPoint) return;
 
-    const shell = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.008, 0.008, 0.03, 6),
+    // Detailed shell casing with neck and rim
+    const shellGroup = new THREE.Group();
+
+    // Casing body
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.006, 0.009, 0.025, 6),
       new THREE.MeshStandardMaterial({
         color: 0xcc9944,
         metalness: 0.8,
-        roughness: 0.3
+        roughness: 0.3,
+        envMapIntensity: 0.5
       })
     );
-    shell.rotation.x = Math.PI / 2;
+    body.position.y = 0;
+    shellGroup.add(body);
+
+    // Neck
+    const neck = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.004, 0.006, 0.005, 6),
+      body.material
+    );
+    neck.position.y = 0.014;
+    shellGroup.add(neck);
+
+    // Rim (base)
+    const rim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.01, 0.01, 0.002, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0xaa7722,
+        metalness: 0.6,
+        roughness: 0.5
+      })
+    );
+    rim.position.y = -0.013;
+    shellGroup.add(rim);
+
+    shellGroup.rotation.x = Math.PI / 4;
     const worldPos = new THREE.Vector3();
     try {
       weapon.shellEjectPoint.getWorldPosition(worldPos);
@@ -289,8 +347,8 @@ export class WeaponController {
       // Fallback if matrix world not ready
       worldPos.copy(weapon.shellEjectPoint.position);
     }
-    shell.position.copy(worldPos);
-    this.scene.add(shell);
+    shellGroup.position.copy(worldPos);
+    this.scene.add(shellGroup);
 
     const vel = new THREE.Vector3(
       (Math.random() - 0.5) * 2,
@@ -298,7 +356,7 @@ export class WeaponController {
       -Math.random() * 1.5
     );
     this.shells.push({
-      mesh: shell,
+      mesh: shellGroup,
       velocity: vel,
       life: 2.0,
       rotation: new THREE.Vector3(Math.random() * 20, Math.random() * 20, Math.random() * 20)
@@ -450,6 +508,17 @@ export class WeaponController {
     // --- Muzzle light decay ---
     if (this.muzzleLight) {
       this.muzzleLight.intensity *= (1 - Math.exp(-60 * dt));
+    }
+
+    // --- Muzzle flash sprite fade ---
+    if (this._muzzleFlashSprite && this._muzzleFlashFlashTime > 0) {
+      this._muzzleFlashFlashTime -= dt;
+      const progress = this._muzzleFlashFlashTime / 0.05;
+      this._muzzleFlashSprite.material.opacity = progress;
+      this._muzzleFlashSprite.scale.set(0.3 * (1 + 0.5 * (1 - progress)), 0.3 * (1 + 0.5 * (1 - progress)), 1);
+      if (this._muzzleFlashFlashTime <= 0) {
+        this._muzzleFlashSprite.material.opacity = 0;
+      }
     }
 
     // --- Shell physics ---

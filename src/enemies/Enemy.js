@@ -75,88 +75,237 @@ export class Enemy {
 
   _createMesh() {
     const group = new THREE.Group();
+    const m = this.game.materials;
 
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x445566, roughness: 0.7, metalness: 0.1
-    });
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0xddaa88, roughness: 0.6, metalness: 0.05
-    });
-    const gearMat = new THREE.MeshStandardMaterial({
-      color: 0x3a4a3a, roughness: 0.8, metalness: 0.2
-    });
-    const darkMat = new THREE.MeshStandardMaterial({
-      color: 0x222222, roughness: 0.8, metalness: 0.1
-    });
+    // Choose material palette based on type
+    let uniformColor, gearColor, helmetColor;
+    switch (this.type) {
+      case 'rifleman':
+        uniformColor = 0x5a6a5a; gearColor = 0x3a4a3a; helmetColor = 0x4a5a4a;
+        break;
+      case 'rusher':
+        uniformColor = 0x6a5a4a; gearColor = 0x4a3a2a; helmetColor = 0x000000;
+        break;
+      case 'sniper':
+        uniformColor = 0x5a6a4a; gearColor = 0x4a5a3a; helmetColor = 0x3a4a3a;
+        break;
+      case 'boss':
+        uniformColor = 0x4a4a3a; gearColor = 0x2a2a1a; helmetColor = 0x3a3a2a;
+        break;
+      default:
+        uniformColor = 0x5a6a5a; gearColor = 0x3a4a3a; helmetColor = 0x4a5a4a;
+    }
 
-    // Torso
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 0.6, 8), bodyMat);
+    const bodyMat = m.getFabricOlive({ color: uniformColor });
+    const headMat = m.getSkin({ color: 0xddaa88 });
+    const gearMat = m.getFabric(gearColor, { color: gearColor, roughness: 0.85 });
+    const darkMat = m.getPlastic({ color: 0x222222, roughness: 0.8 });
+    const metalMat = m.getDarkMetal();
+    const bootMat = m.getPlastic({ color: 0x1a1a1a, roughness: 0.9 });
+    const gloveMat = m.getFabric(0x444444, { color: 0x444444, roughness: 0.8 });
+
+    // ─── TORSO ──────────────────────────────────────────────────────────
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.33, 0.55, 8), bodyMat);
     torso.position.y = 0.8;
     group.add(torso);
 
-    // Head
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), headMat);
+    // ─── HEAD ───────────────────────────────────────────────────────────
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), headMat);
     head.position.y = 1.25;
+    head.scale.set(1, 1.15, 0.9);
     group.add(head);
     this.headMesh = head;
 
-    // Helmet
+    // Eyes (small dark dots)
+    for (let side of [-1, 1]) {
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.015, 4, 4),
+        new THREE.MeshBasicMaterial({ color: 0x111111 })
+      );
+      eye.position.set(side * 0.05, 1.28, -0.15);
+      group.add(eye);
+    }
+
+    // Helmet (full coverage)
     const helmet = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, 8, 8, 0, Math.PI * 2, 0, Math.PI * 0.5),
-      gearMat
+      new THREE.SphereGeometry(0.18, 10, 10, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      m.getPaintedMetal(helmetColor, { color: helmetColor, roughness: 0.6 })
     );
     helmet.position.y = 1.25;
     helmet.rotation.x = Math.PI;
     group.add(helmet);
 
-    // Vest
-    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.35, 0.15), gearMat);
+    // Helmet NVG mount
+    const nvgMount = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.004, 0.01), metalMat);
+    nvgMount.position.set(0, 1.35, -0.08);
+    group.add(nvgMount);
+
+    // Helmet straps
+    for (let side of [-1, 1]) {
+      const strap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.002, 0.003, 0.12),
+        darkMat
+      );
+      strap.position.set(side * 0.12, 1.2, 0);
+      group.add(strap);
+    }
+
+    // ─── VEST / PLATE CARRIER ───────────────────────────────────────────
+    // Front plate
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.3, 0.12), gearMat);
     vest.position.set(0, 0.8, -0.12);
     group.add(vest);
 
-    // Arms
-    const armGeom = new THREE.CylinderGeometry(0.06, 0.07, 0.4, 6);
-    for (let side of [-1, 1]) {
-      const arm = new THREE.Mesh(armGeom, bodyMat);
-      arm.position.set(side * 0.35, 0.75, 0);
-      arm.rotation.z = side * 0.3;
-      group.add(arm);
+    // Back plate
+    const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.28, 0.06), gearMat);
+    backPlate.position.set(0, 0.8, 0.12);
+    group.add(backPlate);
 
-      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 4, 4), headMat);
-      hand.position.set(side * 0.4, 0.55, 0);
-      group.add(hand);
-
-      const gun = new THREE.Mesh(
-        new THREE.BoxGeometry(0.03, 0.03, 0.25),
-        darkMat
+    // Vest pouches (3 on front)
+    for (let i = 0; i < 3; i++) {
+      const pouch = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.04, 0.02),
+        gearMat
       );
-      gun.position.set(side * 0.42, 0.55, -0.15);
-      gun.rotation.x = 0.5;
-      group.add(gun);
+      pouch.position.set(-0.06 + i * 0.05, 0.82, -0.17);
+      group.add(pouch);
     }
 
-    // Legs
-    const legGeom = new THREE.CylinderGeometry(0.08, 0.09, 0.4, 6);
-    for (let side of [-0.12, 0.12]) {
-      const leg = new THREE.Mesh(legGeom, gearMat);
-      leg.position.set(side, 0.2, 0);
-      group.add(leg);
-    }
-
-    // Shoulder pads
+    // Side panels
     for (let side of [-1, 1]) {
-      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.1, 4, 4), gearMat);
-      pad.position.set(side * 0.28, 0.9, 0);
-      pad.scale.set(1, 0.6, 0.8);
+      const sidePanel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.25, 0.08),
+        gearMat
+      );
+      sidePanel.position.set(side * 0.15, 0.8, 0);
+      group.add(sidePanel);
+    }
+
+    // ─── SHOULDERS ──────────────────────────────────────────────────────
+    for (let side of [-1, 1]) {
+      // Shoulder pad
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), gearMat);
+      pad.position.set(side * 0.28, 0.95, 0);
+      pad.scale.set(1, 0.5, 1.2);
       group.add(pad);
     }
 
-    // Belt
-    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.015, 4, 8), gearMat);
+    // ─── ARMS ───────────────────────────────────────────────────────────
+    const armUpperGeom = new THREE.CylinderGeometry(0.055, 0.065, 0.25, 6);
+    const armLowerGeom = new THREE.CylinderGeometry(0.045, 0.055, 0.2, 6);
+    for (let side of [-1, 1]) {
+      // Upper arm
+      const arm = new THREE.Mesh(armUpperGeom, bodyMat);
+      arm.position.set(side * 0.34, 0.75, 0);
+      arm.rotation.z = side * 0.2;
+      group.add(arm);
+
+      // Lower arm
+      const forearm = new THREE.Mesh(armLowerGeom, bodyMat);
+      forearm.position.set(side * 0.36, 0.52, 0);
+      forearm.rotation.z = side * 0.15;
+      group.add(forearm);
+
+      // Hand (glove)
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.045, 5, 5), gloveMat);
+      hand.position.set(side * 0.37, 0.42, 0);
+      group.add(hand);
+
+      // Weapon (rifle held across chest)
+      const gun = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.03, 0.25),
+        m.getDarkMetal()
+      );
+      gun.position.set(side * 0.38, 0.48, -0.12);
+      gun.rotation.x = 0.4;
+      group.add(gun);
+    }
+
+    // ─── LEGS ───────────────────────────────────────────────────────────
+    const thighGeom = new THREE.CylinderGeometry(0.08, 0.07, 0.25, 6);
+    const calfGeom = new THREE.CylinderGeometry(0.06, 0.07, 0.2, 6);
+    for (let side of [-0.11, 0.11]) {
+      // Thigh
+      const thigh = new THREE.Mesh(thighGeom, gearMat);
+      thigh.position.set(side, 0.35, 0);
+      group.add(thigh);
+
+      // Calf
+      const calf = new THREE.Mesh(calfGeom, gearMat);
+      calf.position.set(side, 0.12, 0);
+      group.add(calf);
+
+      // Boot
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.04, 0.1), bootMat);
+      boot.position.set(side, -0.02, 0.02);
+      group.add(boot);
+    }
+
+    // ─── BELT ───────────────────────────────────────────────────────────
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.015, 4, 10), gearMat);
     belt.position.set(0, 0.55, 0);
     belt.rotation.x = Math.PI / 2;
     group.add(belt);
 
+    // Belt pouches (small)
+    for (let i = 0; i < 2; i++) {
+      const bp = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.03, 0.02),
+        gearMat
+      );
+      bp.position.set(-0.06 + i * 0.12, 0.57, -0.22);
+      group.add(bp);
+      // Back pouches
+      const bpb = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.03, 0.02),
+        gearMat
+      );
+      bpb.position.set(-0.06 + i * 0.12, 0.57, 0.22);
+      group.add(bpb);
+    }
+
+    // ─── KNEE PADS ──────────────────────────────────────────────────────
+    for (let side of [-0.11, 0.11]) {
+      const knee = new THREE.Mesh(
+        new THREE.SphereGeometry(0.025, 4, 4),
+        darkMat
+      );
+      knee.position.set(side, 0.22, 0.06);
+      knee.scale.set(1, 0.8, 0.5);
+      group.add(knee);
+    }
+
+    // ─── TYPE-SPECIFIC GEAR ────────────────────────────────────────────
+    if (this.type === 'sniper') {
+      // Ghillie-like overlay (simplified with green material)
+      const ghillieMat = m.getFabric(0x4a6a3a, { color: 0x4a6a3a });
+      for (let i = 0; i < 5; i++) {
+        const strip = new THREE.Mesh(
+          new THREE.BoxGeometry(0.003, 0.1 + Math.random() * 0.05, 0.003),
+          ghillieMat
+        );
+        strip.position.set(
+          (Math.random() - 0.5) * 0.4,
+          0.7 + Math.random() * 0.5,
+          (Math.random() - 0.5) * 0.2 - 0.1
+        );
+        group.add(strip);
+      }
+    }
+
+    if (this.type === 'boss') {
+      // Heavy armor: bigger plates
+      const armorMat = m.getPaintedMetalDark({ color: 0x444444, roughness: 0.5 });
+      // Chest plate
+      const chestPlate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 0.25, 0.03),
+        armorMat
+      );
+      chestPlate.position.set(0, 0.85, -0.13);
+      group.add(chestPlate);
+    }
+
+    // ─── SHADOWS ────────────────────────────────────────────────────────
     group.castShadow = true;
     group.traverse(child => {
       if (child.isMesh) {
