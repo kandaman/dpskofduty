@@ -43,16 +43,16 @@ export class Level {
     switch (style) {
       case 'concrete':
         wallMat = this.materials.getConcrete('standard', { color: 0x99aab5 });
-        roofMat = this.materials.getConcrete('dark', { color: 0x667788 });
+        roofMat = this.materials.getConcrete('standard', { color: 0x667788 });
         trimMat = this.materials.getConcrete('standard', { color: 0xbbccdd });
         break;
       case 'damaged':
-        wallMat = this.materials.getConcrete('standard', { color: 0x8899a0 });
-        roofMat = this.materials.getConcrete('dark', { color: 0x556666 });
+        wallMat = this.materials.getConcrete('damaged', { color: 0x8899a0 });
+        roofMat = this.materials.getConcrete('worn', { color: 0x556666 });
         trimMat = this.materials.getPaintedMetal(0x666677);
         break;
       case 'bunker':
-        wallMat = this.materials.getConcrete('dark', { color: 0x778888 });
+        wallMat = this.materials.getConcrete('worn', { color: 0x778888 });
         roofMat = this.materials.getConcrete('dark', { color: 0x556666 });
         trimMat = this.materials.getBareMetal(0x777777, 0.5);
         break;
@@ -370,7 +370,7 @@ export class Level {
     }
 
     // ─── CENTRAL MONUMENT ────────────────────────────────────────────────
-    const monumentMat = mats.getConcrete('standard', { color: 0x8899aa });
+    const monumentMat = mats.getConcrete('worn', { color: 0x8899aa });
     const monumentMetal = mats.getBareMetal(0x888899, 0.3);
 
     // Base — octagonal
@@ -472,7 +472,7 @@ export class Level {
     }
 
     // ─── BARRIERS ────────────────────────────────────────────────────────
-    const barrierMat = mats.getConcrete('standard', { color: 0x889999 });
+    const barrierMat = mats.getConcrete('anti_slip', { color: 0x889999 });
     const barrierPositions = [
       [[-6, 2], 1.5, 0.8, 0],
       [[-6.6, 2], 1.5, 0.8, Math.PI / 2],
@@ -500,7 +500,7 @@ export class Level {
     }
 
     // ─── JERSEY BARRIERS (concrete road barriers) ────────────────────────
-    const jerseyMat = mats.getConcrete('standard', { color: 0x778888 });
+    const jerseyMat = mats.getConcrete('anti_slip', { color: 0x778888 });
     for (let i = 0; i < 4; i++) {
       const angle = (i / 4) * Math.PI * 2;
       const dist = 14;
