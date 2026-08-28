@@ -8,18 +8,36 @@ export class EnemyManager {
     this.killCount = 0;
     this.killCounts = { rifleman: 0, rusher: 0, sniper: 0, boss: 0 };
     this.obstacles = [];
+
+    // Cached character model (loaded once, cloned per enemy)
+    this._characterModel = null;
+    this._modelReady = false;
+
+    // Start async load
+    this._loadCharacterModel();
+  }
+
+  async _loadCharacterModel() {
+    try {
+      const scene = await this.game.assetManager.load('characters/CesiumMan.glb');
+      this._characterModel = scene;
+      this._modelReady = true;
+      console.log('CesiumMan.glb loaded for enemy characters');
+    } catch (err) {
+      console.warn('CesiumMan.glb not available, using procedural enemies:', err.message);
+    }
   }
 
   spawnEnemyAt(x, z, type = 'rifleman') {
     const pos = new THREE.Vector3(x, 0, z);
-    const enemy = new Enemy(this.game, pos, type);
+    const enemy = new Enemy(this.game, pos, type, this._characterModel);
     enemy.obstacles = this.obstacles;
     this.enemies.push(enemy);
     return enemy;
   }
 
   spawnBoss(position) {
-    const enemy = new Enemy(this.game, position, 'boss');
+    const enemy = new Enemy(this.game, position, 'boss', this._characterModel);
     enemy.obstacles = this.obstacles;
     // Boss is big - scale it up
     enemy.mesh.scale.set(1.5, 1.5, 1.5);
@@ -38,7 +56,6 @@ export class EnemyManager {
         this.killCount++;
         if (this.killCounts[enemy.type] !== undefined) this.killCounts[enemy.type]++;
 
-        // Notify wave manager
         if (this.game.waveManager) {
           this.game.waveManager.onEnemyKilled();
         }

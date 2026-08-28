@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 export class AssetManager {
   constructor(renderer = null) {
@@ -26,8 +27,14 @@ export class AssetManager {
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
     this._gltfLoader.setDRACOLoader(dracoLoader);
 
+    // FBX loader
+    this._fbxLoader = new FBXLoader();
+
     // RGBE/HDRI loader
     this._rgbeLoader = new RGBELoader();
+
+    // Texture loader for generic paths
+    this._textureLoader = new THREE.TextureLoader();
 
     // Active environment map
     this._envMap = null;
@@ -81,6 +88,79 @@ export class AssetManager {
         },
         undefined,
         (error) => reject(error)
+      );
+    });
+  }
+
+  /**
+   * Load an FBX model from public/assets/
+   * @param {string} path - relative path within public/assets/ (e.g. 'weapons/m4a1/M4A1.fbx')
+   * @returns {Promise<THREE.Group>} the loaded scene
+   */
+  async loadFBX(path) {
+    if (this._cache.has(path)) {
+      return this._cache.get(path);
+    }
+
+    const url = `/assets/${path}`;
+    return new Promise((resolve, reject) => {
+      this._fbxLoader.load(
+        url,
+        (group) => {
+          // Apply environment map to all materials in the model
+          if (this._envMap) {
+            group.traverse((child) => {
+              if (child.isMesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => {
+                  mat.envMap = this._envMap;
+                  mat.envMapIntensity = 1.0;
+                  mat.needsUpdate = true;
+                });
+              }
+            });
+          }
+
+          // Enable shadows on all meshes
+          group.traverse((child) => {
+            if (child.isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+
+          this._cache.set(path, group);
+          resolve(group);
+        },
+        undefined,
+        (error) => reject(error)
+      );
+    });
+  }
+
+  /**
+   * Load a single texture from a full asset-relative path.
+   * @param {string} path - path within public/assets/ (e.g. 'weapons/m4a1/M4A1_Base_Color.png')
+   * @returns {Promise<THREE.Texture>}
+   */
+  async loadAssetTexture(path) {
+    if (this._textureCache.has(path)) {
+      return this._textureCache.get(path);
+    }
+
+    const url = `/assets/${path}`;
+    return new Promise((resolve, reject) => {
+      this._textureLoader.load(
+        url,
+        (texture) => {
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.wrapT = THREE.RepeatWrapping;
+          texture.anisotropy = 4;
+          this._textureCache.set(path, texture);
+          resolve(texture);
+        },
+        undefined,
+        reject
       );
     });
   }

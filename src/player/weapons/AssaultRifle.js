@@ -1,9 +1,17 @@
 import * as THREE from 'three';
 
+/**
+ * AssaultRifle — M4A1 with PBR FBX model loading.
+ *
+ * Constructor creates a procedural placeholder mesh so the weapon is usable
+ * immediately. Call loadFBX() to replace it with the high-detail FBX model
+ * and PBR textures; the swap happens transparently once the assets arrive.
+ */
 export class AssaultRifle {
   constructor(game) {
     this.game = game;
     this.materials = game.materials;
+
     this.stats = {
       name: 'M4A1',
       damage: 28,
@@ -20,8 +28,15 @@ export class AssaultRifle {
     };
 
     this.ammo = this.stats.magSize;
-    this.mesh = this._createWeaponModel();
+
+    // ── Procedural fallback group ──────────────────────────────────────
+    this._proceduralGroup = this._createWeaponModel();
+    this._proceduralGroup.name = 'weapon_m4a1_fallback';
+
+    // Container group — always the public face, contents swap later
+    this.mesh = new THREE.Group();
     this.mesh.name = 'weapon_m4a1';
+    this.mesh.add(this._proceduralGroup);
 
     // Shell ejection point
     this.shellEjectPoint = new THREE.Object3D();
@@ -33,11 +48,143 @@ export class AssaultRifle {
     this.muzzlePoint.position.set(0, 0, -0.62);
     this.mesh.add(this.muzzlePoint);
 
+    // Fire animation state
     this._fireAnimTime = 0;
     this._isFiring = false;
-    this._boltPosition = 0; // for bolt animation
+    this._boltPosition = 0;
     this._boltTarget = 0;
+    this._boltMesh = null; // set in _createWeaponModel
+    this._ejectionCover = null;
+
+    // Flag: true once FBX is loaded and swapped in
+    this._fbxLoaded = false;
+    this._fbxModel = null; // the loaded FBX group (kept alive, hidden when not visible)
+
+    // Kick off async FBX load
+    this._initFBXLoad();
   }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  FBX LOADING
+  // ─────────────────────────────────────────────────────────────────────
+
+  async _initFBXLoad() {
+    try {
+      const fbDir = 'weapons/m4a1';
+
+      // Load FBX geometry
+      const fbxGroup = await this.game.assetManager.loadFBX(`${fbDir}/M4A1.fbx`);
+
+      // Load PBR textures
+      const [baseColor, normal, metallic, roughness] = await Promise.all([
+        this.game.assetManager.loadAssetTexture(`${fbDir}/M4A1_Base_Color.png`),
+        this.game.assetManager.loadAssetTexture(`${fbDir}/M4A1_Normal.png`),
+        this.game.assetManager.loadAssetTexture(`${fbDir}/M4A1_Metallic.png`),
+        this.game.assetManager.loadAssetTexture(`${fbDir}/M4A1_Roughness.png`),
+      ]);
+
+      // Configure texture channels
+      baseColor.colorSpace = THREE.SRGBColorSpace;
+      normal.colorSpace = THREE.LinearSRGBColorSpace;
+      metallic.colorSpace = THREE.LinearSRGBColorSpace;
+      roughness.colorSpace = THREE.LinearSRGBColorSpace;
+
+      // Apply PBR material to every mesh in the FBX group
+      fbxGroup.traverse((child) => {
+        if (!child.isMesh) return;
+        const origMat = child.material;
+
+        const pbrMat = new THREE.MeshStandardMaterial({
+          map: baseColor,
+          normalMap: normal,
+          normalScale: new THREE.Vector2(1, 1),
+          metalnessMap: metallic,
+          roughnessMap: roughness,
+          metalness: 1.0,
+          roughness: 0.6,
+          envMap: this.game.assetManager._envMap || null,
+          envMapIntensity: 1.0,
+          color: 0xffffff,
+        });
+
+        // Copy vertex colours if the FBX has them
+        if (origMat && Array.isArray(origMat) && origMat.length > 0) {
+          // FBXLoader sometimes returns material arrays — take the first
+        }
+
+        child.material = pbrMat;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+
+      // Scale and position for first-person view
+      fbxGroup.scale.set(0.55, 0.55, 0.55);
+      fbxGroup.position.set(0.30, -0.25, -0.50);
+      fbxGroup.rotation.set(0, 0, 0);
+
+      // Apply environment map if already loaded
+      if (this.game.assetManager._envMap) {
+        fbxGroup.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.envMap = this.game.assetManager._envMap;
+            child.material.needsUpdate = true;
+          }
+        });
+      }
+
+      // ── Swap into the container ──────────────────────────────────────
+      this._swapToFBX(fbxGroup);
+
+    } catch (err) {
+      console.warn(`M4A1 FBX load failed, using procedural model: ${err.message}`);
+    }
+  }
+
+  /**
+   * Replace the procedural geometry inside this.mesh with the FBX group.
+   * shellEjectPoint and muzzlePoint stay as children of this.mesh.
+   */
+  _swapToFBX(fbxGroup) {
+    // Remember children to preserve
+    const shellPt = this.shellEjectPoint;
+    const muzzlePt = this.muzzlePoint;
+
+    // Remove all current children
+    while (this.mesh.children.length > 0) {
+      this.mesh.remove(this.mesh.children[0]);
+    }
+
+    // Add FBX model
+    this.mesh.add(fbxGroup);
+    this._fbxModel = fbxGroup;
+
+    // Re-add attachment points
+    this.mesh.add(shellPt);
+    this.mesh.add(muzzlePt);
+
+    // Dispose procedural geometry to free memory
+    this._disposeProcedural();
+
+    this._fbxLoaded = true;
+  }
+
+  _disposeProcedural() {
+    if (!this._proceduralGroup) return;
+    this._proceduralGroup.traverse((child) => {
+      if (child.isMesh) {
+        child.geometry?.dispose();
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(m => m.dispose());
+        }
+      }
+    });
+    this._proceduralGroup = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  PROCEDURAL MODEL (fallback — runs synchronously at construction)
+  // ─────────────────────────────────────────────────────────────────────
 
   _createWeaponModel() {
     const group = new THREE.Group();
@@ -54,34 +201,29 @@ export class AssaultRifle {
     const darkMat = m.getDarkMetal();
     const accentMat = m.getBareMetal(0x777777, 0.5);
 
-    const s = 0.55; // overall scale factor
+    const s = 0.55;
 
     // ─── LOWER RECEIVER ─────────────────────────────────────────────────
     const lowerRec = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.035, 0.22), bodyMat);
     lowerRec.position.set(0, -0.005, -0.03);
     group.add(lowerRec);
 
-    // Trigger pocket
     const triggerPocket = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.025), darkMat);
     triggerPocket.position.set(0, -0.015, 0.05);
     group.add(triggerPocket);
 
-    // Trigger guard
     const trigGuard = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.003, 0.035), darkMat);
     trigGuard.position.set(0, -0.032, 0.04);
     group.add(trigGuard);
 
-    // Trigger
     const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.015, 0.003), darkMat);
     trigger.position.set(0, -0.025, 0.05);
     group.add(trigger);
 
-    // Bolt catch
     const boltCatch = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.006, 0.003), accentMat);
     boltCatch.position.set(0.035, 0.005, -0.04);
     group.add(boltCatch);
 
-    // Magazine release
     const magRelease = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.004, 0.003), accentMat);
     magRelease.position.set(0.03, -0.005, 0.01);
     group.add(magRelease);
@@ -91,105 +233,84 @@ export class AssaultRifle {
     upperRec.position.set(0, 0.025, -0.06);
     group.add(upperRec);
 
-    // Receiver seam (line between upper and lower)
     const seam = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.002, 0.2), darkMat);
     seam.position.set(0, 0.008, -0.05);
     group.add(seam);
 
-    // Picatinny rail on top of upper receiver
     const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.006, 0.18), railMat);
     topRail.position.set(0, 0.033, -0.05);
     group.add(topRail);
 
-    // Rail teeth (small transverse ridges)
     for (let i = 0; i < 8; i++) {
-      const tooth = new THREE.Mesh(
-        new THREE.BoxGeometry(0.028, 0.003, 0.003), railMat
-      );
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.003, 0.003), railMat);
       tooth.position.set(0, 0.036, -0.08 + i * 0.02);
       group.add(tooth);
     }
 
-    // Forward assist
     const fa = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.007, 0.01, 6), darkMat);
     fa.position.set(0.035, 0.012, -0.02);
     fa.rotation.z = Math.PI / 2;
     group.add(fa);
 
-    // Ejection port
     const ejectionPort = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.015, 0.005), darkMat);
     ejectionPort.position.set(0.018, 0.03, -0.08);
     group.add(ejectionPort);
 
-    // Bolt carrier (visible through ejection port)
     this._boltMesh = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.008, 0.012), barrelMat);
     this._boltMesh.position.set(0.018, 0.025, -0.08);
     group.add(this._boltMesh);
 
-    // Charging handle
     const chargeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.015, 6), darkMat);
     chargeHandle.position.set(0.012, 0.032, 0.08);
     chargeHandle.rotation.z = Math.PI / 2;
     group.add(chargeHandle);
 
     // ─── BARREL ─────────────────────────────────────────────────────────
-    // Barrel chamber (thicker)
     const barrelChamber = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.08, 10), barrelMat);
     barrelChamber.position.set(0, 0, -0.22);
     barrelChamber.rotation.x = Math.PI / 2;
     group.add(barrelChamber);
 
-    // Barrel (thinner, taper)
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.016, 0.28, 10), barrelMat);
     barrel.position.set(0, 0, -0.45);
     barrel.rotation.x = Math.PI / 2;
     group.add(barrel);
 
-    // Barrel nut
     const barrelNut = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.025, 0.02, 10), darkMat);
     barrelNut.position.set(0, 0, -0.25);
     barrelNut.rotation.x = Math.PI / 2;
     group.add(barrelNut);
 
-    // Gas block
     const gasBlock = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.025, 0.025), darkMat);
     gasBlock.position.set(0, 0, -0.5);
     group.add(gasBlock);
 
-    // Gas tube (thin cylinder above barrel)
     const gasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.22, 6), barrelMat);
     gasTube.position.set(0, 0.018, -0.35);
     gasTube.rotation.x = Math.PI / 2;
     group.add(gasTube);
 
     // ─── HANDGUARD / RAIL SYSTEM ────────────────────────────────────────
-    // Main handguard body
     const handguardBody = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.2), railMat);
     handguardBody.position.set(0, 0, -0.3);
     group.add(handguardBody);
 
-    // Rail top (full length)
     const railTop = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.006, 0.18), railMat);
     railTop.position.set(0, 0.023, -0.3);
     group.add(railTop);
 
-    // Rail bottom
     const railBottom = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.006, 0.18), railMat);
     railBottom.position.set(0, -0.023, -0.3);
     group.add(railBottom);
 
-    // Rail sides
     for (let side of [-1, 1]) {
       const railSide = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.025, 0.16), railMat);
       railSide.position.set(side * 0.02, 0, -0.3);
       group.add(railSide);
     }
 
-    // Rail panels (small slots on handguard)
     for (let i = 0; i < 8; i++) {
-      const slot = new THREE.Mesh(
-        new THREE.BoxGeometry(0.02, 0.002, 0.003), darkMat
-      );
+      const slot = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.002, 0.003), darkMat);
       slot.position.set(0, 0.025, -0.24 + i * 0.02);
       group.add(slot);
       const slot2 = slot.clone();
@@ -204,12 +325,8 @@ export class AssaultRifle {
     grip.rotation.x = -0.2;
     group.add(grip);
 
-    // Grip texture lines (checkering)
     for (let i = 0; i < 4; i++) {
-      const line = new THREE.Mesh(
-        new THREE.BoxGeometry(0.035, 0.002, 0.002),
-        darkMat
-      );
+      const line = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.002, 0.002), darkMat);
       line.position.set(0, -0.04 + i * 0.02, 0.055);
       group.add(line);
     }
@@ -220,63 +337,49 @@ export class AssaultRifle {
     magBody.rotation.x = -0.08;
     group.add(magBody);
 
-    // Magazine floor plate
     const magPlate = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.005, 0.06), darkMat);
     magPlate.position.set(0, -0.09, -0.06);
     group.add(magPlate);
 
-    // Magazine ribs
     for (let i = 0; i < 3; i++) {
       const rib = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.003, 0.001), accentMat);
       rib.position.set(0, -0.06 + i * 0.02, -0.095);
       group.add(rib);
     }
 
-    // Rounds visible at top of mag
     for (let i = 0; i < 3; i++) {
-      const round = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.003, 0.003, 0.001, 4),
-        barrelMat
-      );
+      const round = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.001, 4), barrelMat);
       round.position.set(0.008, -0.04 + i * 0.005, -0.08);
       round.rotation.z = Math.PI / 2;
       group.add(round);
     }
 
     // ─── STOCK ──────────────────────────────────────────────────────────
-    // Buffer tube
     const bufferTube = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.018, 0.08, 8), darkMat);
     bufferTube.position.set(0, 0.02, 0.14);
     bufferTube.rotation.x = Math.PI / 2;
     group.add(bufferTube);
 
-    // Stock body
     const stockBody = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.035, 0.12), stockMat);
     stockBody.position.set(0, 0.005, 0.22);
     stockBody.rotation.x = 0.03;
     group.add(stockBody);
 
-    // Stock cheek rest
     const cheekRest = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.005, 0.08), darkMat);
     cheekRest.position.set(0, 0.025, 0.23);
     group.add(cheekRest);
 
-    // Stock butt pad
     const buttPad = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.01), darkMat);
     buttPad.position.set(0, 0.005, 0.28);
     group.add(buttPad);
 
-    // Stock adjustment holes
     for (let i = 0; i < 3; i++) {
-      const hole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.002, 0.002, 0.003, 4), accentMat
-      );
+      const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.003, 4), accentMat);
       hole.position.set(0, 0.015, 0.19 + i * 0.03);
       hole.rotation.x = Math.PI / 2;
       group.add(hole);
     }
 
-    // Stock QD sling mount
     const slingMount = new THREE.Mesh(new THREE.TorusGeometry(0.006, 0.002, 4, 8), darkMat);
     slingMount.position.set(-0.02, 0.02, 0.2);
     group.add(slingMount);
@@ -286,14 +389,12 @@ export class AssaultRifle {
     frontSightBase.position.set(0, 0.04, -0.45);
     group.add(frontSightBase);
 
-    // Front sight posts (ears)
     for (let side of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.025, 0.003), sightMat);
       post.position.set(side * 0.008, 0.05, -0.45);
       group.add(post);
     }
 
-    // Front sight pin
     const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.0015, 0.0015, 0.015, 4), accentMat);
     pin.position.set(0, 0.06, -0.45);
     pin.rotation.x = Math.PI / 2;
@@ -304,15 +405,10 @@ export class AssaultRifle {
     rearSightBase.position.set(0, 0.038, 0.02);
     group.add(rearSightBase);
 
-    // Rear sight aperture (ring)
-    const aperture = new THREE.Mesh(
-      new THREE.TorusGeometry(0.005, 0.002, 6, 8),
-      sightMat
-    );
+    const aperture = new THREE.Mesh(new THREE.TorusGeometry(0.005, 0.002, 6, 8), sightMat);
     aperture.position.set(0, 0.048, 0.02);
     group.add(aperture);
 
-    // Rear sight adjustment knob
     const adjKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.007, 0.003, 6), darkMat);
     adjKnob.position.set(0, 0.055, 0.02);
     group.add(adjKnob);
@@ -323,7 +419,6 @@ export class AssaultRifle {
     muzzleBrake.rotation.x = Math.PI / 2;
     group.add(muzzleBrake);
 
-    // Muzzle brake ports
     for (let i = 0; i < 3; i++) {
       const port = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.003, 0.002), darkMat);
       port.position.set(0, 0.014, -0.6 + (i - 1) * 0.006);
@@ -333,7 +428,6 @@ export class AssaultRifle {
       group.add(port2);
     }
 
-    // Muzzle threading (visible at tip)
     const muzzleThread = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.01, 10), barrelMat);
     muzzleThread.position.set(0, 0, -0.62);
     muzzleThread.rotation.x = Math.PI / 2;
@@ -347,36 +441,34 @@ export class AssaultRifle {
     }
 
     // ─── DUST COVER / EJECTION PORT COVER ──────────────────────────────
-    this._ejectionCover = new THREE.Mesh(
-      new THREE.BoxGeometry(0.022, 0.012, 0.003),
-      bodyMat
-    );
+    this._ejectionCover = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.012, 0.003), bodyMat);
     this._ejectionCover.position.set(0.018, 0.03, -0.08);
     group.add(this._ejectionCover);
 
     // ─── AMBIENT OCCLUSION GEOMETRY ─────────────────────────────────────
-    // Small details that improve silhouette
-    // Selector switch
     const selector = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.006, 4), darkMat);
     selector.position.set(0, 0.02, 0.06);
     selector.rotation.z = Math.PI / 2;
     group.add(selector);
 
-    // Apply scale
     group.scale.set(s, s, s);
 
     return group;
   }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  PUBLIC API
+  // ─────────────────────────────────────────────────────────────────────
 
   fire() {
     if (this.ammo <= 0) return false;
     this.ammo--;
     this._fireAnimTime = 0;
     this._isFiring = true;
-    // Bolt slides back on fire
+
+    // Fallback bolt animation (only works on procedural model)
     this._boltTarget = -0.02;
 
-    // Flip ejection port cover open
     if (this._ejectionCover) {
       this._ejectionCover.rotation.x = -0.3;
     }
@@ -389,17 +481,16 @@ export class AssaultRifle {
   }
 
   update(dt) {
-    // Fire animation (kick-back)
+    // Fire animation (kick-back) — applied to this.mesh regardless of model type
     if (this._isFiring) {
       this._fireAnimTime += dt;
-      // Quick kick-back with recovery
       const kick = -0.008 * Math.sin(this._fireAnimTime * 40) * Math.exp(-this._fireAnimTime * 15);
       this.mesh.position.z += kick;
 
-      // Bolt animation: snap back, return
-      const boltRecovery = 1 - Math.exp(-this._fireAnimTime * 50);
-      this._boltPosition += (this._boltTarget - this._boltPosition) * (1 - Math.exp(-60 * dt));
-      if (this._boltMesh) {
+      // Bolt animation (procedural model only)
+      if (!this._fbxLoaded && this._boltMesh) {
+        const boltRecovery = 1 - Math.exp(-this._fireAnimTime * 50);
+        this._boltPosition += (this._boltTarget - this._boltPosition) * (1 - Math.exp(-60 * dt));
         this._boltMesh.position.z = -0.08 + this._boltPosition;
       }
 
@@ -410,13 +501,13 @@ export class AssaultRifle {
       }
     }
 
-    // Ejection cover closes after bolt returns
-    if (!this._isFiring && this._ejectionCover) {
+    // Ejection cover closes after bolt returns (procedural only)
+    if (!this._isFiring && this._ejectionCover && !this._fbxLoaded) {
       this._ejectionCover.rotation.x += (0 - this._ejectionCover.rotation.x) * (1 - Math.exp(-20 * dt));
     }
 
-    // Bolt position smoothing (return to rest)
-    if (!this._isFiring && this._boltMesh) {
+    // Bolt position smoothing (procedural only)
+    if (!this._isFiring && this._boltMesh && !this._fbxLoaded) {
       this._boltPosition += (0 - this._boltPosition) * (1 - Math.exp(-20 * dt));
       this._boltMesh.position.z = -0.08 + this._boltPosition;
     }

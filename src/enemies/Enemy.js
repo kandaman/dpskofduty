@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Enemy {
-  constructor(game, position, type = 'rifleman') {
+  constructor(game, position, type = 'rifleman', characterModel = null) {
     this.game = game;
     this.type = type;
     this.health = 100;
@@ -60,8 +60,12 @@ export class Enemy {
     // Telemetry (observational only — does not affect gameplay)
     this.telemetry = { shotsAttempted: 0, hits: 0, damageDealt: 0 };
 
-    // Mesh
-    this.mesh = this._createMesh();
+    // Mesh — use loaded character model if available, else procedural fallback
+    if (characterModel) {
+      this.mesh = this._createFromModel(characterModel);
+    } else {
+      this.mesh = this._createMesh();
+    }
     this.mesh.position.copy(position);
     this.game.scene.add(this.mesh);
 
@@ -71,6 +75,189 @@ export class Enemy {
     // Line-of-sight raycaster (reusable)
     this._losRaycaster = new THREE.Raycaster();
     this._losRaycaster.far = 60;
+  }
+
+  /**
+   * Create visual mesh from the loaded CesiumMan.glb character model.
+   * Clones the model, applies type-specific materials, and adds
+   * tactical equipment (helmet, vest, pouches, weapon) on top.
+   */
+  _createFromModel(characterModel) {
+    const group = characterModel.clone();
+    const m = this.game.materials;
+
+    // Choose colour palette per enemy type
+    let uniformColor, gearColor, helmetColor;
+    switch (this.type) {
+      case 'rifleman':
+        uniformColor = 0x5a6a5a; gearColor = 0x3a4a3a; helmetColor = 0x4a5a4a;
+        break;
+      case 'rusher':
+        uniformColor = 0x6a5a4a; gearColor = 0x4a3a2a; helmetColor = 0x000000;
+        break;
+      case 'sniper':
+        uniformColor = 0x5a6a4a; gearColor = 0x4a5a3a; helmetColor = 0x3a4a3a;
+        break;
+      case 'boss':
+        uniformColor = 0x4a4a3a; gearColor = 0x2a2a1a; helmetColor = 0x3a3a2a;
+        break;
+      default:
+        uniformColor = 0x5a6a5a; gearColor = 0x3a4a3a; helmetColor = 0x4a5a4a;
+    }
+
+    const gearMat = m.getFabric(gearColor, { color: gearColor, roughness: 0.85 });
+    const darkMat = m.getPlastic({ color: 0x222222, roughness: 0.8 });
+    const metalMat = m.getDarkMetal();
+    const bootMat = m.getPlastic({ color: 0x1a1a1a, roughness: 0.9 });
+
+    // Tint the character model materials to match enemy type
+    group.traverse((child) => {
+      if (child.isMesh) {
+        // Tint base mesh clothing/body with uniform colour
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(mat => {
+            if (mat.color) {
+              // Leave skin tones alone (light brown), tint everything else
+              const r = mat.color.r, g = mat.color.g, b = mat.color.b;
+              // Simple heuristic: very desaturated materials get the uniform colour
+              const sat = Math.max(r, g, b) - Math.min(r, g, b);
+              if (sat < 0.15) {
+                mat.color.setHex(uniformColor);
+              }
+            }
+            mat.envMap = this.game.assetManager._envMap || null;
+            mat.envMapIntensity = 0.8;
+            mat.needsUpdate = true;
+          });
+        }
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    // Scale to human size (~1.7m)
+    // CesiumMan is roughly 1.0 units tall, so scale ~1.7
+    group.scale.set(1.7, 1.7, 1.7);
+
+    // ── Tactical equipment (added on top of the character model) ─────
+
+    // Helmet (dome over head)
+    const helmet = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 8, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      m.getPaintedMetal(helmetColor, { color: helmetColor, roughness: 0.6 })
+    );
+    helmet.position.set(0, 1.05, 0);
+    helmet.rotation.x = Math.PI;
+    group.add(helmet);
+
+    // Helmet NVG mount
+    const nvgMount = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.003, 0.008), metalMat);
+    nvgMount.position.set(0, 1.15, -0.06);
+    group.add(nvgMount);
+
+    // Vest / plate carrier (front and back)
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.22, 0.08), gearMat);
+    vest.position.set(0, 0.60, -0.08);
+    group.add(vest);
+
+    const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.20, 0.04), gearMat);
+    backPlate.position.set(0, 0.60, 0.08);
+    group.add(backPlate);
+
+    // Vest pouches
+    for (let i = 0; i < 3; i++) {
+      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.015), gearMat);
+      pouch.position.set(-0.05 + i * 0.05, 0.62, -0.11);
+      group.add(pouch);
+    }
+
+    // Belt
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.012, 4, 8), gearMat);
+    belt.position.set(0, 0.42, 0);
+    belt.rotation.x = Math.PI / 2;
+    group.add(belt);
+
+    // Weapon (rifle carried across chest)
+    const gun = new THREE.Mesh(
+      new THREE.BoxGeometry(0.025, 0.025, 0.20),
+      m.getDarkMetal()
+    );
+    gun.position.set(0.15, 0.48, -0.10);
+    gun.rotation.x = -0.3;
+    gun.rotation.z = -0.3;
+    group.add(gun);
+
+    // Gun barrel
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.008, 0.01, 0.15, 6),
+      m.getDarkMetal()
+    );
+    barrel.position.set(0.18, 0.45, -0.20);
+    barrel.rotation.z = -0.2;
+    barrel.rotation.x = Math.PI / 2;
+    group.add(barrel);
+
+    // Boots
+    for (let side of [-0.07, 0.07]) {
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.08), bootMat);
+      boot.position.set(side, 0.01, 0.02);
+      group.add(boot);
+    }
+
+    // Type-specific gear
+    if (this.type === 'sniper') {
+      const ghillieMat = m.getFabric(0x4a6a3a, { color: 0x4a6a3a });
+      for (let i = 0; i < 4; i++) {
+        const strip = new THREE.Mesh(
+          new THREE.BoxGeometry(0.002, 0.08 + Math.random() * 0.04, 0.002),
+          ghillieMat
+        );
+        strip.position.set(
+          (Math.random() - 0.5) * 0.3,
+          0.5 + Math.random() * 0.5,
+          (Math.random() - 0.5) * 0.15 - 0.05
+        );
+        group.add(strip);
+      }
+    }
+
+    if (this.type === 'boss') {
+      const armorMat = m.getPaintedMetalDark({ color: 0x444444, roughness: 0.5 });
+      const chestPlate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.20, 0.02),
+        armorMat
+      );
+      chestPlate.position.set(0, 0.62, -0.09);
+      group.add(chestPlate);
+    }
+
+    // ── Store head reference ────────────────────────────────────────
+    // Find the highest mesh near y>1.0 to use as headshot target
+    let headMesh = null;
+    let highestY = -Infinity;
+    group.traverse((child) => {
+      if (child.isMesh) {
+        const worldPos = new THREE.Vector3();
+        child.getWorldPosition(worldPos);
+        if (worldPos.y > highestY && worldPos.y > 0.8) {
+          highestY = worldPos.y;
+          headMesh = child;
+        }
+      }
+    });
+    this.headMesh = headMesh || group; // fallback: whole group
+
+    // ── Shadow ──────────────────────────────────────────────────────
+    group.castShadow = true;
+    group.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    return group;
   }
 
   _createMesh() {

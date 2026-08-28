@@ -22,15 +22,16 @@ export class PostPipeline {
     this.composer.addPass(renderPass);
 
     // --- GTAO (Ground Truth Ambient Occlusion) ---
-    // Provides subtle contact shadows around geometry intersections
+    // Provides subtle contact shadows around geometry intersections.
+    // Builds an internal half-resolution depth/normal pyramid for AO.
     const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
     gtaoPass.output = GTAOPass.OUTPUT.Default; // blend AO with scene
-    gtaoPass.blendIntensity = 1.0;
+    gtaoPass.blendIntensity = 0.8;             // subtle — realistic military lighting
     gtaoPass.updateGtaoMaterial({
-      radius: 0.25,        // small radius for local contact shadows
-      distanceExponent: 0.5, // short influence distance
+      radius: 0.35,          // slightly wider radius for better contact shadows
+      distanceExponent: 1.0, // smoother distance falloff
       thickness: 0.5,        // occlusion thickness
-      distanceFallOff: 1.0,
+      distanceFallOff: 2.0,  // extend influence just past the radius
       scale: 1.0
     });
     this.composer.addPass(gtaoPass);
