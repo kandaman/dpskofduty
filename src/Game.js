@@ -3,6 +3,7 @@ import { Renderer } from './engine/Renderer.js';
 import { InputManager } from './engine/InputManager.js';
 import { AudioManager } from './engine/AudioManager.js';
 import { MaterialManager } from './engine/MaterialManager.js';
+import { AssetManager } from './engine/AssetManager.js';
 import { PlayerCamera } from './player/PlayerCamera.js';
 import { PlayerController } from './player/PlayerController.js';
 import { WeaponController } from './player/WeaponController.js';
@@ -29,6 +30,7 @@ export class Game {
     // Systems (order: material manager first so textures are ready for level/weapons)
     this.input = new InputManager();
     this.materials = new MaterialManager();
+    this.assetManager = new AssetManager();
     this.camera = new PlayerCamera(this);
     this.renderer = new Renderer(this);
     this.audio = new AudioManager(this.camera.camera);
@@ -89,14 +91,33 @@ export class Game {
     );
   }
 
-  start() {
+  async start() {
     this.running = true;
     this.clock.start();
+
+    // Load HDRI environment map for PBR lighting (async, non-blocking)
+    this._loadEnvironmentMap();
 
     // Start wave-based progression
     this.waveManager.start();
 
     this._loop();
+  }
+
+  async _loadEnvironmentMap() {
+    try {
+      const envMap = await this.assetManager.loadEnvironmentMap(
+        'industrial_sunset_2k.hdr',
+        this.scene,
+        this.renderer.renderer
+      );
+      // Propagate envMap to all PBR materials
+      this.materials.setEnvMap(envMap);
+      this.materials.setEnvMapIntensity(0.8);
+    } catch (err) {
+      // HDRI not available — fall back to procedural sky lighting
+      console.log('HDRI not available, using procedural sky:', err.message);
+    }
   }
 
   _loop() {
