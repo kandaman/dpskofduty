@@ -61,9 +61,9 @@ export class PlayerController {
     this.crouchHeight += (this.targetCrouch - this.crouchHeight) * (1 - Math.exp(-12 * dt));
     this.isCrouching = this.crouchHeight > 0.1;
 
-    // --- Movement direction ---
-    const forward = this.camera.getForward();
-    const right = this.camera.getRight();
+    // --- Movement direction (yaw-only — independent of pitch/roll/bob/shake) ---
+    const forward = this.camera.getMovementForward();
+    const right = this.camera.getMovementRight();
 
     let moveX = 0, moveZ = 0;
     if (input.isKeyDown('KeyW')) moveZ += 1;

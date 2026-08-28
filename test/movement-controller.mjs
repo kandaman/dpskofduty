@@ -1,107 +1,152 @@
-// ─── PERSISTENT MOVEMENT CONTROLLER ───────────────────────────────────
-// Tracks held keyboard state and diffs against desired state so key
-// changes are only emitted when needed — no unnecessary key toggles.
-//
-// Usage:
-//   const mc = new MovementController(page);
-//   await mc.setMovement({ forward: true, sprint: true });
-//   // keys stay held across loop iterations
-//   await mc.setMovement({ forward: false });
-//   // only releases what changed
+/**
+ * D-Movement Matrix Test — verifies strafe-right (D key) produces correct
+ * displacement across a matrix of yaw/pitch combinations, using yaw-only
+ * movement basis (not camera quaternion).
+ *
+ * Usage:
+ *   node test/movement-controller.mjs
+ *
+ * Requires Vite dev server on http://localhost:3000
+ */
 
-export class MovementController {
-  constructor(page) {
-    this.page = page;
-    this._held = {};
-    this._keys = ['w', 'a', 's', 'd', 'ShiftLeft', 'ShiftRight'];
-    this._keys.forEach(k => this._held[k] = false);
-  }
+import { chromium } from 'playwright';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-  /**
-   * Set desired movement state. Only emits key.down/key.up for keys
-   * that actually change state.
-   * @param {object} opts
-   * @param {boolean} [opts.forward]
-   * @param {boolean} [opts.backward]
-   * @param {boolean} [opts.left]
-   * @param {boolean} [opts.right]
-   * @param {boolean} [opts.sprint]   // ShiftLeft
-   * @param {boolean} [opts.sprintRight]  // ShiftRight (fallback)
-   */
-  async setMovement(opts) {
-    const map = {
-      forward: 'w',
-      backward: 's',
-      left: 'a',
-      right: 'd',
-      sprint: 'ShiftLeft',
-      sprintRight: 'ShiftRight'
-    };
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
 
-    for (const [optKey, physicalKey] of Object.entries(map)) {
-      if (opts[optKey] === undefined) continue;
-      const desired = !!opts[optKey];
-      if (desired !== this._held[physicalKey]) {
-        this._held[physicalKey] = desired;
-        try {
-          if (desired) {
-            await this.page.keyboard.down(physicalKey);
-          } else {
-            await this.page.keyboard.up(physicalKey);
-          }
-        } catch (e) {
-          // Ignore key-up errors (key may not be held)
-        }
-      }
-    }
-  }
+const URL = 'http://localhost:3000';
 
-  /** Release all movement keys */
-  async releaseAll() {
-    for (const k of this._keys) {
-      if (this._held[k]) {
-        this._held[k] = false;
-        try { await this.page.keyboard.up(k); } catch (e) {}
-      }
-    }
-  }
+// Test matrix: all yaw/pitch combos
+const YAW_ANGLES  = [0, 45, 90, 135, 180, 225, 270, 315];
+const PITCH_ANGLES = [0, 45, -45, 80, -80];
 
-  /** Release only the sprint key */
-  async releaseSprint() {
-    if (this._held.ShiftLeft) {
-      this._held.ShiftLeft = false;
-      try { await this.page.keyboard.up('ShiftLeft'); } catch (e) {}
-    }
-    if (this._held.ShiftRight) {
-      this._held.ShiftRight = false;
-      try { await this.page.keyboard.up('ShiftRight'); } catch (e) {}
-    }
-  }
+// Open test position (validated obstacle-free below)
+const TEST_POS = { x: 3, z: -8 };
 
-  /** @returns {{ forward, backward, left, right, sprint }} */
-  getState() {
-    return {
-      forward: this._held.w,
-      backward: this._held.s,
-      left: this._held.a,
-      right: this._held.d,
-      sprint: this._held.ShiftLeft
-    };
-  }
+const PASS = [];
+const FAIL = [];
 
-  /** True if any movement key (WASD) is held */
-  isMoving() {
-    return this._held.w || this._held.s || this._held.a || this._held.d;
-  }
+function rad(deg) { return deg * Math.PI / 180; }
 
-  /** @returns {string} human-readable state */
-  toString() {
-    const parts = [];
-    if (this._held.w) parts.push('FWD');
-    if (this._held.s) parts.push('BWD');
-    if (this._held.a) parts.push('L');
-    if (this._held.d) parts.push('R');
-    if (this._held.ShiftLeft) parts.push('SPRINT');
-    return parts.join('+') || '(stopped)';
-  }
+function expectedRight(yawDeg) {
+  const yaw = rad(yawDeg);
+  return { x: Math.cos(yaw), z: -Math.sin(yaw) };
 }
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function main() {
+  console.log('=== D-MOVEMENT MATRIX TEST ===\n');
+
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--use-gl=swiftshader'],
+  });
+
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  let errors = [];
+
+  page.on('pageerror', err => errors.push(err.message));
+
+  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.evaluate(() => document.getElementById('start-btn')?.click());
+  await page.waitForFunction(() => window.game?.running, { timeout: 15000 });
+  console.log('Game started.\n');
+
+  // Wait for level to build
+  await sleep(2000);
+
+  // Check for open space at TEST_POS
+  const isOpen = await page.evaluate(({ x, z }) => {
+    const g = window.game;
+    if (!g || !g.level) return false;
+    const obstacles = g.level.getObstacleMesmes?.() || g.level.obstacleMeshes || [];
+    const playerRadius = 0.6;
+    for (const obs of obstacles) {
+      const dx = obs.position.x - x;
+      const dz = obs.position.z - z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < playerRadius + 1.0) return false;
+    }
+    return true;
+  }, TEST_POS);
+  console.log(`Test position (${TEST_POS.x}, ${TEST_POS.z}): ${isOpen ? 'OPEN' : 'BLOCKED'}\n`);
+
+  let total = 0;
+
+  for (const yawDeg of YAW_ANGLES) {
+    for (const pitchDeg of PITCH_ANGLES) {
+      total++;
+      const exp = expectedRight(yawDeg);
+
+      // Reset player position and set yaw/pitch
+      await page.evaluate(({ pos, yawDeg, pitchDeg }) => {
+        const g = window.game;
+        g.player.position.set(pos.x, 0, pos.z);
+        g.player.velocity.set(0, 0, 0);
+        g.camera.yaw   = yawDeg * Math.PI / 180;
+        g.camera.pitch = pitchDeg * Math.PI / 180;
+      }, { pos: TEST_POS, yawDeg, pitchDeg });
+
+      await sleep(100);
+
+      // Record initial position
+      const posBefore = await page.evaluate(() => ({
+        x: window.game.player.position.x,
+        z: window.game.player.position.z,
+      }));
+
+      // Press D for 300ms
+      await page.keyboard.down('d');
+      await sleep(300);
+      await page.keyboard.up('d');
+      await sleep(50);
+
+      // Record final position
+      const posAfter = await page.evaluate(() => ({
+        x: window.game.player.position.x,
+        z: window.game.player.position.z,
+      }));
+
+      const dx = posAfter.x - posBefore.x;
+      const dz = posAfter.z - posBefore.z;
+      const moved = Math.sqrt(dx * dx + dz * dz);
+
+      // Dot product with expected right vector
+      const dot = (dx * exp.x + dz * exp.z) / (moved || 1);
+
+      const pass = moved > 0.05 && dot > 0.95;
+
+      if (pass) {
+        PASS.push({ yaw: yawDeg, pitch: pitchDeg, moved, dot });
+      } else {
+        FAIL.push({ yaw: yawDeg, pitch: pitchDeg, moved, dot,
+          dx: dx.toFixed(4), dz: dz.toFixed(4),
+          expX: exp.x.toFixed(4), expZ: exp.z.toFixed(4) });
+      }
+
+      const icon = pass ? 'PASS' : 'FAIL';
+      console.log(`  [${icon}] yaw=${yawDeg}° pitch=${pitchDeg}°  moved=${moved.toFixed(3)} dot=${dot.toFixed(3)}`);
+    }
+  }
+
+  console.log(`\n=== Results: ${PASS.length} PASS, ${FAIL.length} FAIL (${total} total) ===\n`);
+
+  if (FAIL.length > 0) {
+    console.log('FAIL details:');
+    for (const f of FAIL) {
+      console.log(`  yaw=${f.yaw}° pitch=${f.pitch}° moved=${f.moved.toFixed(3)} dot=${f.dot.toFixed(3)}`);
+      console.log(`    displacement: (${f.dx}, ${f.dz})  expected: (${f.expX}, ${f.expZ})`);
+    }
+  }
+
+  await browser.close();
+  process.exit(FAIL.length > 0 ? 1 : 0);
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
