@@ -44,11 +44,17 @@ async function runRealInputTest() {
   console.log('Internal state is READ only for measurement.\n');
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader']
+  const browser = global.__botBrowser = await chromium.launch({
+    headless: process.env.WATCH !== '1',
+    args: process.env.WATCH === '1' ? ['--no-sandbox'] : ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader']
   });
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  // Headed runs (WATCH=1): a failed real pointer-lock fires pointerlockchange
+  // and resets input.locked to false. Neutralize the request so the forced
+  // lock (input.locked = true) sticks for the whole session.
+  await ctx.addInitScript(function() {
+    if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -87,6 +93,11 @@ async function runRealInputTest() {
       if (g.player) {
         g.player.position.set(args.px, 0, args.pz);
         g.player.velocity.set(0, 0, 0);
+        // Oversized HP pool so enemies can't kill the player mid-test at
+        // 60fps (headed runs advance far more game time between checks
+        // than the 6-7fps headless runs this suite was tuned for).
+        g.player.maxHealth = 100000;
+        g.player.health = 100000;
       }
       var cam = g.camera;
       if (cam) {
@@ -442,7 +453,9 @@ async function runRealInputTest() {
   await page.keyboard.down('r');
   await waitForGameFrames(page, 3, 5000);
   await page.keyboard.up('r');
-  await waitForGameFrames(page, 4, 8000);
+  // Wait by wall-clock: at 60fps (headed) 4 frames is only ~66ms of game
+  // time — not enough for the reload animation to finish.
+  await sleep(2500);
 
   var ammo_after_r = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
   console.log('      Ammo after R: ' + ammo_after_r + '/30');
@@ -630,4 +643,8 @@ async function runRealInputTest() {
   console.log('\n[PASS] All real-input tests passed.');
 }
 
-runRealInputTest().catch(function(err) { console.error('[FATAL] ' + err.message); process.exit(1); });
+runRealInputTest().catch(async function(err) {
+  console.error('[FATAL] ' + err.message);
+  if (global.__botBrowser) try { await global.__botBrowser.close(); } catch (e) {}
+  process.exit(1);
+});

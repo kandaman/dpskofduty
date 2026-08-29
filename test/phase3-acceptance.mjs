@@ -469,7 +469,8 @@ async function playThrough(page, runLabel) {
 
   // KITE_RUSHER sub-state timer (accumulates game dt for accurate timing)
   var kitePhase = 0;   // 0=sprint, 1=transition (sprint release), 2=fire
-  var kiteTimer = 0;   // seconds in current phase (game time)
+  var kiteTimer = 0;   // seconds in current phase (real time)
+  var kiteLastTick = Date.now();
 
   // Sprint duty cycle telemetry
   var sprintTelemetry = {
@@ -886,6 +887,7 @@ async function playThrough(page, runLabel) {
         if (isFiring) { await stopFiring(page); isFiring = false; }
         kitePhase = 0;
         kiteTimer = 0;
+        kiteLastTick = Date.now();
       }
       if (nextState !== currentState || lastState !== currentState) {
         console.log('   [' + runLabel + '] [' + ((Date.now() - loopStart) / 1000).toFixed(0) + 's] ' + currentState + ' -> ' + nextState + ' (HP=' + hp + ', E=' + enemies.length + ')');
@@ -1037,7 +1039,10 @@ async function playThrough(page, runLabel) {
         }
         isMovingAway = true;
 
-      } else if (shouldFire && dist >= 8) {
+      } else if (shouldFire && (dist >= 8 || targetLos)) {
+        // ── PRECISION FIRE ──
+        // Safe range, or close-range with LOS (an approaching enemy inside 8m
+        // must still be shot — backpedaling alone lets them close to melee).
         // ── PRECISION FIRE (safe range, low threat) ──
         // Release sprint but keep moving (strafe/backpedal) while sprint-block clears
         await moveCtrl.setMovement({ sprint: false });
@@ -1172,8 +1177,12 @@ async function playThrough(page, runLabel) {
       await aimDirection(page, kiteHeading, 0);
 
       // Reset kite phase on entry (handled by transition callback)
-      // Advance sub-state timer in game seconds (dt ~0.15s per frame at 6.6fps)
-      kiteTimer += 0.15; // game dt per frame ~0.15s at 6.6fps
+      // Advance sub-state timer by real elapsed time — the game clock runs 1:1
+      // with real time (dtCap only clamps oversized frames), so phase
+      // durations hold at their designed values at any frame rate.
+      var nowTick = Date.now();
+      kiteTimer += Math.min((nowTick - kiteLastTick) / 1000, 1.0);
+      kiteLastTick = nowTick;
 
       // ── KITE SUB-STATE MACHINE ──
       if (kitePhase === 0) {
@@ -1208,12 +1217,23 @@ async function playThrough(page, runLabel) {
         }
       }
 
-      // If magazine empty, reload while still moving
-      if (ammo <= 0 && reserve > 0 && !reloading) {
-        // Brief key tap for reload — game handles it asynchronously
+      // If magazine empty, reload while still moving. Also reload proactively
+      // during the sprint phase when the mag runs low — emptying mid-kite is
+      // lethal (no fire output while sprinting away).
+      // The game ignores R while isSprintBlocked (~0.25s after sprint), so
+      // drop sprint briefly, wait for the block to clear, then tap R once.
+      if (reserve > 0 && !reloading && (ammo <= 0 || (kitePhase === 0 && ammo < 10))) {
+        await moveCtrl.setMovement({ sprint: false });
+        for (var rw = 0; rw < 10; rw++) {
+          var sprintBlockedNow = await gameEval(page, 'game.weaponController ? game.weaponController.isSprintBlocked : false');
+          if (!sprintBlockedNow) break;
+          await sleep(50);
+        }
         await page.keyboard.down('r');
         await sleep(50);
         await page.keyboard.up('r');
+        // Resume sprinting only if we're in the escape phase (phase 1 fires)
+        await moveCtrl.setMovement({ sprint: kitePhase === 0 });
       }
 
       // Exit condition: rusher dead or safely distant
@@ -1224,6 +1244,8 @@ async function playThrough(page, runLabel) {
           currentState = STATE.SEARCH;
         }
         kitePhase = 0;
+        kiteTimer = 0;
+        kiteLastTick = Date.now();
         kiteTimer = 0;
       }
       isMovingAway = true;
@@ -1423,6 +1445,10 @@ async function setupErrorCapture(page) {
   page.on('pageerror', function(e) { errors.push('PAGE: ' + e.message); });
   page.on('console', function(msg) {
     if (msg.type() === 'error') errors.push('CONSOLE: ' + msg.text());
+  });
+  // Record the URL of failed network requests so 404s are diagnosable
+  page.on('response', function(res) {
+    if (res.status() >= 400) errors.push('HTTP ' + res.status() + ': ' + res.url());
   });
   await page.evaluate(function() {
     window.__p3_errors = [];
@@ -1679,6 +1705,38 @@ function reportAmmoEconomy(runResults) {
   }
 }
 
+// ─── DEV SERVER ──────────────────────────────────────────────────────
+// Tests expect the game on :3005 (vite's default is :3000). Start our own
+// server if nothing is listening there instead of relying on a manually
+// started one. Returns the child process, or null if a server was already up.
+async function ensureDevServer(url) {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(2000) });
+    return null; // already running — leave it alone
+  } catch (e) { /* not listening — start one */ }
+
+  var serverPath = path.resolve(__dirname, '..', 'node_modules', 'vite', 'bin', 'vite.js');
+  var proc = spawn(process.execPath, [serverPath, '--port', '3005', '--strictPort', '--no-open'], {
+    cwd: path.resolve(__dirname, '..'),
+    stdio: 'ignore',
+  });
+  global.__devServer = proc;
+
+  var deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(url, { signal: AbortSignal.timeout(1000) });
+      console.log('   [SERVER] dev server ready on :3005');
+      return proc;
+    } catch (e) { await sleep(500); }
+  }
+  throw new Error('dev server failed to start on :3005 within 30s');
+}
+
+function stopDevServer(proc) {
+  if (proc) try { proc.kill(); } catch (e) {}
+}
+
 // ─── MAIN ────────────────────────────────────────────────────────────
 async function runPhase3() {
   console.log('');
@@ -1686,6 +1744,7 @@ async function runPhase3() {
   console.log('║     PHASE 3 FINAL ACCEPTANCE — zero false positives    ║');
   console.log('╚' + '═'.repeat(57) + '╝');
 
+  var devServer = await ensureDevServer(URL);
   var skipSub = process.argv.includes('--skip-sub');
   if (skipSub) {
     console.log('   [SKIP] Sub-suite tests (--skip-sub flag)');
@@ -1711,10 +1770,16 @@ async function runPhase3() {
   console.log('▁'.repeat(59));
 
   var browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--use-gl=swiftshader']
+    headless: process.env.WATCH !== '1',
+    // headed (WATCH=1): use real GPU so the window actually renders;
+    // headless: swiftshader for CI environments without a GPU
+    args: process.env.WATCH === '1' ? ['--no-sandbox'] : ['--no-sandbox', '--use-gl=swiftshader']
   });
   var ctx = await browser.newContext({ viewport: { width: 800, height: 500 } });
+  // Headed runs (WATCH=1): see real-input-test.mjs — fake pointer lock
+  await ctx.addInitScript(function() {
+    if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+  });
   var page = await ctx.newPage();
   var allErrors = await setupErrorCapture(page);
 
@@ -1912,11 +1977,13 @@ async function runPhase3() {
 
   if (OVERALL_PASS) {
     console.log('\n[PHASE 3 PASS] All acceptance gates passed.');
+    stopDevServer(devServer);
     process.exit(0);
   } else {
     console.log('\n[PHASE 3 FAIL] Some gates did not pass.');
+    stopDevServer(devServer);
     process.exit(1);
   }
 }
 
-runPhase3().catch(function(err) { console.error('[FATAL] ' + err.message); process.exit(1); });
+runPhase3().catch(function(err) { console.error('[FATAL] ' + err.message); stopDevServer(global.__devServer); process.exit(1); });

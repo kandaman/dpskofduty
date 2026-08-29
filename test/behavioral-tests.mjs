@@ -35,11 +35,15 @@ async function runBehavioralTests() {
   console.log('NOT source code inspection.\n');
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader']
+  const browser = global.__botBrowser = await chromium.launch({
+    headless: process.env.WATCH !== '1',
+    args: process.env.WATCH === '1' ? ['--no-sandbox'] : ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader']
   });
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  // Headed runs (WATCH=1): see real-input-test.mjs — fake pointer lock
+  await ctx.addInitScript(function() {
+    if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -533,10 +537,9 @@ async function runBehavioralTests() {
 
   // Wait for enemy to naturally fire in its update loop.
   // Rusher: fireRate=400-600ms, damage=15, baseHitChance=0.55 at 5m.
-  // At ~2fps (500ms/frame), each frame = ~1 fire cycle.
-  // Wait 15 frames for ~15 attempts at 55% hit = ~8 hits = ~120 damage.
-  // Health regen never starts because damage is continuous.
-  await waitForGameFrames(page, 15, 20000);
+  // Wait by wall-clock (8s) — at 60fps (headed) frame-based waits cover
+  // too little game time for fire cycles to happen.
+  await sleep(8000);
 
   // Read telemetry to verify natural firing occurred
   var telemetry = await gameEval(page, '(function(){var e=game.enemyManager.enemies[0];return e?{shots:e.telemetry.shotsAttempted,hits:e.telemetry.hits,dmg:e.telemetry.damageDealt.toFixed(1)}:null;})()');
@@ -576,4 +579,8 @@ async function runBehavioralTests() {
   console.log('\n[PASS] All behavioral tests passed.');
 }
 
-runBehavioralTests().catch(function(err) { console.error('[FATAL] ' + err.message); process.exit(1); });
+runBehavioralTests().catch(async function(err) {
+  console.error('[FATAL] ' + err.message);
+  if (global.__botBrowser) try { await global.__botBrowser.close(); } catch (e) {}
+  process.exit(1);
+});
