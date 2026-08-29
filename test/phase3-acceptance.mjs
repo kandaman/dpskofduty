@@ -125,27 +125,10 @@ async function waitSprintOut(page) {
 // each shot so the aim isn't stale — the enemy advances between the state
 // read and the shot.
 async function fireAimedBurst(page, enemyIdx, maxShots) {
-  // Hold-fire with continuous re-aim: the M4 is automatic, so holding the
-  // trigger while re-aiming every ~60ms keeps the aim→shot latency to
-  // ~one frame. (Discrete click cycles had 100-300ms of latency — at
-  // rusher speed that is 0.5-2m of lead error per shot.)
-  var live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-  if (!live) return 0;
-  await aimAt(page, live.x, live.z, 1.25);
-  await page.mouse.down({ button: 'right' }); // ADS: halve spread
-  await page.mouse.down();
-  var deadline = Date.now() + maxShots * 90; // fireCooldown is 80ms
-  var fired = 0;
-  while (Date.now() < deadline) {
-    live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-    if (!live) break;
-    await aimAt(page, live.x, live.z, 1.25);
-    fired++;
-    await sleep(60);
-  }
-  await page.mouse.up();
-  await page.mouse.up({ button: 'right' });
-  return fired;
+  // In-page fire-control: aims at the enemy every frame while holding the
+  // trigger (aim→shot latency ~1 frame). One evaluate for the whole burst.
+  var f = await page.evaluate('(function(){return window.__botFire ? window.__botFire(' + enemyIdx + ', ' + maxShots + ') : 0;})()');
+  return typeof f === 'number' ? f : 0;
 }
 
 // ─── STATE READING (read-only — no gameplay modification) ─────────────
@@ -508,6 +491,16 @@ async function playThrough(page, runLabel) {
     var __now = Date.now();
     tickTimes.push(__now - lastTickStart);
     lastTickStart = __now;
+
+    // Periodic bot-view capture — lets us see what the bot sees when the
+    // visible window looks wrong (white screen reports etc.)
+    var __tickNo = tickTimes.length;
+    if (__tickNo % 60 === 30) {
+      try {
+        var __shotPath = path.join(RESULT_DIR, 'botview-' + runLabel + '-' + Math.round((__now - loopStart) / 1000) + 's.png');
+        await page.screenshot({ path: __shotPath, timeout: 5000 });
+      } catch (e) {}
+    }
 
     // ── Read state ──
     var state = await readGameState(page);
@@ -1046,43 +1039,15 @@ async function playThrough(page, runLabel) {
           await aimDirection(page, escapeHeading, 0);
           await moveCtrl.setMovement({ forward: true, sprint: true });
 
-          // Fire while moving (survival mode) — hold-fire with continuous
-          // re-aim (see fireAimedBurst: latency per shot drops to ~1 frame)
-          var liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-          if (liveTarget) {
-            await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
-            await page.mouse.down({ button: 'right' }); // ADS: halve spread
-            await page.mouse.down();
-            var sfEnd = Date.now() + 240;
-            while (Date.now() < sfEnd) {
-              liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-              if (!liveTarget) break;
-              await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
-              await sleep(60);
-            }
-            await page.mouse.up();
-            await page.mouse.up({ button: 'right' });
-          }
+          // Fire while moving (survival mode) — in-page fire-control
+          // (aims every frame while holding the trigger)
+          await page.evaluate('window.__botFire ? window.__botFire(' + target.idx + ', 3) : 0');
         } else {
           // Sprint blocked — keep moving, wait for sprint-out naturally
           await moveCtrl.setMovement({ forward: true, sprint: false });
           // Fire opportunistically if we have ammo and LOS
           if (ammo > 0 && targetLos) {
-            var liveTarget2 = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-            if (liveTarget2) {
-              await aimAt(page, liveTarget2.x, liveTarget2.z, 1.25);
-              await page.mouse.down({ button: 'right' }); // ADS: halve spread
-              await page.mouse.down();
-              var sfEnd2 = Date.now() + 180;
-              while (Date.now() < sfEnd2) {
-                liveTarget2 = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
-                if (!liveTarget2) break;
-                await aimAt(page, liveTarget2.x, liveTarget2.z, 1.25);
-                await sleep(60);
-              }
-              await page.mouse.up();
-              await page.mouse.up({ button: 'right' });
-            }
+            await page.evaluate('window.__botFire ? window.__botFire(' + target.idx + ', 2) : 0');
           }
         }
         isMovingAway = true;
@@ -1265,20 +1230,12 @@ async function playThrough(page, runLabel) {
           kiteLos = state.rusherLOS; // batched in readGameState (1 evaluate)
         }
         if (ammo > 0 && !reloading && kiteLos) {
-          // Hold-fire with continuous re-aim (see fireAimedBurst): one
-          // shot per tick can't out-damage a 5-6.5 speed rusher closing on
-          // a 5-speed walk, and discrete clicks carry 100-300ms of aim lag.
-          await page.mouse.down({ button: 'right' }); // ADS: halve spread
-          await page.mouse.down();
-          var kiteFireEnd = Date.now() + 500;
-          while (Date.now() < kiteFireEnd) {
-            var liveTarget = await gameEval(page, '(function(){var g=window.game;var pp=g.player.position;var ee=g.enemyManager.enemies;var best=null,bd=Infinity;for(var i=0;i<ee.length;i++){var e=ee[i];if(e&&e.alive){var d=pp.distanceTo(e.position);if(d<bd){bd=d;best={x:e.position.x,z:e.position.z};}}}return best;})()');
-            if (!liveTarget) break;
-            await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
-            await sleep(60);
+          // In-page fire-control burst at the nearest enemy (usually the
+          // charging rusher): aims every frame while holding the trigger.
+          var kiteIdx = await gameEval(page, '(function(){var g=window.game,pp=g.player.position,best=-1,bd=Infinity,ee=g.enemyManager.enemies;for(var i=0;i<ee.length;i++){var e=ee[i];if(e&&e.alive){var d=pp.distanceTo(e.position);if(d<bd){bd=d;best=i;}}}return best;})()');
+          if (typeof kiteIdx === 'number' && kiteIdx >= 0) {
+            await page.evaluate('window.__botFire(' + kiteIdx + ', 5)');
           }
-          await page.mouse.up();
-          await page.mouse.up({ button: 'right' });
           await aimDirection(page, kiteHeading, 0);
         }
         // After ~0.7s of standing fire, sprint again
@@ -1589,6 +1546,9 @@ async function setupErrorCapture(page) {
     window.addEventListener('unhandledrejection', function(e) {
       window.__p3_errors.push('PROMISE: ' + (e.reason ? e.reason.message : String(e.reason)));
     });
+    window.addEventListener('webglcontextlost', function() {
+      window.__p3_errors.push('WEBGL CONTEXT LOST');
+    }, true);
   });
   return errors;
 }
@@ -1916,6 +1876,46 @@ async function runPhase3() {
     // Headed runs (WATCH=1): see real-input-test.mjs — fake pointer lock
     await ctx.addInitScript(function() {
       if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+      // In-page fire-control: aims at enemy `idx` every frame while holding
+      // LMB (automatic fire) + RMB (ADS). Runs at rAF rate inside the page,
+      // so the aim→shot latency is ~1 frame instead of 100-300ms of
+      // evaluate round-trips. Same synthetic-document-event mechanism the
+      // click fallback uses; hit detection stays entirely in the game.
+      window.__botFire = function(idx, shots) {
+        return new Promise(function(resolve) {
+          var g = window.game;
+          var started = performance.now();
+          var frames = 0;
+          document.dispatchEvent(new MouseEvent('mousedown', { button: 2 })); // ADS
+          document.dispatchEvent(new MouseEvent('mousedown', { button: 0 })); // fire
+          function frame() {
+            var g2 = window.game;
+            var e = g2 && g2.enemyManager ? g2.enemyManager.enemies[idx] : null;
+            var done = frames >= shots || performance.now() - started > shots * 300;
+            if (!e || !e.alive || done) {
+              document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+              document.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
+              resolve(frames);
+              return;
+            }
+            var px = g2.player.position.x, pz = g2.player.position.z;
+            var dx = e.position.x - px, dz = e.position.z - pz;
+            var dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist >= 0.5) {
+              var yaw = -Math.atan2(dx, -dz);
+              var pitch = Math.atan2(1.25 - 1.7, dist);
+              var c = g2.camera;
+              c.yaw = yaw; c.pitch = pitch; c.velocity.yaw = 0; c.velocity.pitch = 0;
+              c.shakeAmount = 0; c.shakeOffset.set(0, 0, 0); c.rollAmount = 0; c.bobOffset.set(0, 0, 0); c.bobSpeed = 0;
+              var euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+              c.camera.quaternion.setFromEuler(euler);
+            }
+            frames++;
+            requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        });
+      };
     });
     page = await ctx.newPage();
     allErrors = await setupErrorCapture(page);
@@ -1961,22 +1961,38 @@ async function runPhase3() {
     console.log('-'.repeat(55));
 
     if (runIdx === 1) {
-      // Load game fresh
-      console.log('   Loading game...');
-      await page.goto(URL, { waitUntil: 'load', timeout: 60000 });
-      await sleep(500);
-      try {
-        // The game blocks the main thread while loading assets on startup,
-        // which can stall Playwright's click action — fall back to an
-        // in-page click if the action doesn't complete.
-        await page.click('#start-btn', { timeout: 15000 });
-      } catch (e) {
-        console.log('   Click action stalled — clicking via evaluate');
-        await page.evaluate(function() { document.getElementById('start-btn').click(); });
+      // Load game fresh — retry on WebGL/startup hiccups (the real-GPU
+      // browser intermittently fails context creation)
+      var loaded = false;
+      for (var loadAttempt = 1; loadAttempt <= 3 && !loaded; loadAttempt++) {
+        console.log('   Loading game...' + (loadAttempt > 1 ? ' (attempt ' + loadAttempt + ')' : ''));
+        await page.goto(URL, { waitUntil: 'load', timeout: 60000 });
+        await sleep(500);
+        try {
+          // The game blocks the main thread while loading assets on startup,
+          // which can stall Playwright's click action — fall back to an
+          // in-page click if the action doesn't complete.
+          await page.click('#start-btn', { timeout: 15000 });
+        } catch (e) {
+          console.log('   Click action stalled — clicking via evaluate');
+          await page.evaluate(function() { document.getElementById('start-btn').click(); });
+        }
+        await sleep(1000);
+        var hasGame = await gameEval(page, 'true');
+        loaded = Boolean(hasGame);
+        if (!loaded) {
+          console.log('   Game did not start — relaunching browser');
+          await browser.close();
+          browser = await chromium.launch({ headless: headlessFlag, args: launchArgs });
+          ctx = await browser.newContext({ viewport: { width: 800, height: 500 } });
+          await ctx.addInitScript(function() {
+            if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+          });
+          page = await ctx.newPage();
+          allErrors = await setupErrorCapture(page);
+        }
       }
-      await sleep(1000);
-      var hasGame = await gameEval(page, 'true');
-      if (!hasGame) { console.log('   FATAL: Game not started'); OVERALL_PASS = false; break; }
+      if (!loaded) { console.log('   FATAL: Game not started after 3 attempts'); OVERALL_PASS = false; break; }
       var framesOk = await waitForFrames(page, 3, 10000);
       console.log('   Game loaded, frames: ' + framesOk);
     } else {

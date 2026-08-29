@@ -20,9 +20,11 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Tone mapping — ACES Filmic for filmic contrast curve
+    // Tone mapping — ACES Filmic for filmic contrast curve.
+    // 1.0 (not 1.5): with the 4.0-intensity sun + HDRI IBL, 1.5 blew out
+    // the ground and sky to white (washed-out scene).
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.5;
+    this.renderer.toneMappingExposure = 1.0;
 
     // Color space (default in r152+, explicit for safety)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
