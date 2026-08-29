@@ -1903,19 +1903,38 @@ async function runPhase3() {
   console.log('PART 3: FULL SIX-WAVE PLAYTHROUGH (3 runs to Victory)');
   console.log('▁'.repeat(59));
 
-  var browser = await chromium.launch({
-    headless: process.env.WATCH !== '1',
-    // headed (WATCH=1): use real GPU so the window actually renders;
-    // headless: swiftshader for CI environments without a GPU
-    args: process.env.WATCH === '1' ? ['--no-sandbox'] : ['--no-sandbox', '--use-gl=swiftshader']
-  });
-  var ctx = await browser.newContext({ viewport: { width: 800, height: 500 } });
-  // Headed runs (WATCH=1): see real-input-test.mjs — fake pointer lock
-  await ctx.addInitScript(function() {
-    if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
-  });
-  var page = await ctx.newPage();
-  var allErrors = await setupErrorCapture(page);
+  // Verify WebGL actually works before burning a run: the real-GPU (headed)
+  // browser intermittently fails context creation ("BindToCurrentSequence
+  // failed" on some NVIDIA drivers) — relaunch up to 3 times when it does.
+  var browser, ctx, page, allErrors;
+  var headlessFlag = process.env.WATCH !== '1';
+  var launchArgs = headlessFlag ? ['--no-sandbox', '--use-gl=swiftshader'] : ['--no-sandbox'];
+  var webglOk = false;
+  for (var launchAttempt = 0; launchAttempt < 3; launchAttempt++) {
+    browser = await chromium.launch({ headless: headlessFlag, args: launchArgs });
+    ctx = await browser.newContext({ viewport: { width: 800, height: 500 } });
+    // Headed runs (WATCH=1): see real-input-test.mjs — fake pointer lock
+    await ctx.addInitScript(function() {
+      if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
+    });
+    page = await ctx.newPage();
+    allErrors = await setupErrorCapture(page);
+    webglOk = await page.evaluate(function() {
+      try { var c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); }
+      catch (e) { return false; }
+    });
+    if (webglOk) {
+      if (launchAttempt > 0) console.log('   [WEBGL] context OK after relaunch');
+      break;
+    }
+    console.log('   [WEBGL] context unavailable (attempt ' + (launchAttempt + 1) + ') — relaunching browser');
+    await browser.close();
+  }
+  if (!webglOk) {
+    console.log('   [FATAL] WebGL unavailable after 3 browser relaunches');
+    stopDevServer(devServer);
+    process.exit(1);
+  }
 
   // Evidence identity
   var acceptanceRunId = 'p3-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
@@ -1946,7 +1965,15 @@ async function runPhase3() {
       console.log('   Loading game...');
       await page.goto(URL, { waitUntil: 'load', timeout: 60000 });
       await sleep(500);
-      await page.click('#start-btn');
+      try {
+        // The game blocks the main thread while loading assets on startup,
+        // which can stall Playwright's click action — fall back to an
+        // in-page click if the action doesn't complete.
+        await page.click('#start-btn', { timeout: 15000 });
+      } catch (e) {
+        console.log('   Click action stalled — clicking via evaluate');
+        await page.evaluate(function() { document.getElementById('start-btn').click(); });
+      }
       await sleep(1000);
       var hasGame = await gameEval(page, 'true');
       if (!hasGame) { console.log('   FATAL: Game not started'); OVERALL_PASS = false; break; }
