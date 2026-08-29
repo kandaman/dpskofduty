@@ -150,7 +150,7 @@ async function fireAimedBurst(page, enemyIdx, maxShots) {
 
 // ─── STATE READING (read-only — no gameplay modification) ─────────────
 async function readGameState(page) {
-  return await gameEval(page, '(function(){var g=window.game;if(!g)return null;var ammoData=null;try{ammoData={ammo:g.weaponController.currentWeapon.ammo,reserve:g.weaponController.currentWeapon.stats.reserveAmmo,reloading:g.weaponController.isReloading,isFiring:g.weaponController.isFiring};}catch(e){ammoData={ammo:0,reserve:0,reloading:false,isFiring:false};}var enemies=[];if(g.enemyManager){var ee=g.enemyManager.enemies;for(var ei=0;ei<ee.length;ei++){var e=ee[ei];if(e&&e.alive){enemies.push({x:e.position.x,z:e.position.z,hp:e.health,type:e.type,idx:ei,dist:g.player.position.distanceTo(e.position)});}}}var pickup=null;if(g.ammoPickup&&g.ammoPickup.active){pickup={x:g.ammoPickup.mesh.position.x,z:g.ammoPickup.mesh.position.z};}var obs=[];if(g.level){var meshes=g.level.getObstacleMeshes();for(var oi=0;oi<meshes.length;oi++){obs.push({x:meshes[oi].position.x,z:meshes[oi].position.z});}}return{hp:g.player.health,maxHp:g.player.maxHealth||100,ammo:ammoData.ammo,reserve:ammoData.reserve,reloading:ammoData.reloading,weaponFiring:ammoData.isFiring,score:g.score,gameOver:g.gameOver,victory:g.waveManager.victoryAchieved,waveState:g.waveManager.state,currentWave:g.waveManager.currentWave,killCount:g.enemyManager?g.enemyManager.killCount:0,playerX:g.player.position.x,playerZ:g.player.position.z,enemies:enemies,ammoPickup:pickup,obstacles:obs,dt:g.clock?g.clock.getDelta():0.15};})()');
+  return await gameEval(page, '(function(){var g=window.game;if(!g)return null;var ammoData=null;try{ammoData={ammo:g.weaponController.currentWeapon.ammo,reserve:g.weaponController.currentWeapon.stats.reserveAmmo,reloading:g.weaponController.isReloading,isFiring:g.weaponController.isFiring,sprintBlocked:g.weaponController.isSprintBlocked};}catch(e){ammoData={ammo:0,reserve:0,reloading:false,isFiring:false,sprintBlocked:false};}var enemies=[];if(g.enemyManager){var ee=g.enemyManager.enemies;for(var ei=0;ei<ee.length;ei++){var e=ee[ei];if(e&&e.alive){enemies.push({x:e.position.x,z:e.position.z,hp:e.health,type:e.type,idx:ei,dist:g.player.position.distanceTo(e.position)});}}}var pickup=null;if(g.ammoPickup&&g.ammoPickup.active){pickup={x:g.ammoPickup.mesh.position.x,z:g.ammoPickup.mesh.position.z};}var obs=[];if(g.level){var meshes=g.level.getObstacleMeshes();for(var oi=0;oi<meshes.length;oi++){obs.push({x:meshes[oi].position.x,z:meshes[oi].position.z});}}var nr=null,nrd=Infinity,losR=false;for(var ri=0;ri<enemies.length;ri++){var ren=enemies[ri];if(ren.type==="rusher"&&ren.dist<nrd){nrd=ren.dist;nr=ren;}}if(nr&&g.scene){var obs2=g.level?g.level.getObstacleMeshes():[];if(!obs2.length){losR=true;}else{var st=new THREE.Vector3(g.player.position.x,0.8,g.player.position.z);var en2=new THREE.Vector3(nr.x,0.8,nr.z);var dr=new THREE.Vector3().subVectors(en2,st);var dd=dr.length();if(dd<0.5){losR=true;}else{dr.normalize();var rc=new THREE.Raycaster();rc.set(st,dr);rc.far=dd+0.1;var hh=rc.intersectObjects(obs2,false);losR=hh.length===0||hh[0].distance>=dd;}}}return{hp:g.player.health,maxHp:g.player.maxHealth||100,ammo:ammoData.ammo,reserve:ammoData.reserve,reloading:ammoData.reloading,weaponFiring:ammoData.isFiring,sprintBlocked:ammoData.sprintBlocked,rusherLOS:losR,score:g.score,gameOver:g.gameOver,victory:g.waveManager.victoryAchieved,waveState:g.waveManager.state,currentWave:g.waveManager.currentWave,killCount:g.enemyManager?g.enemyManager.killCount:0,playerX:g.player.position.x,playerZ:g.player.position.z,enemies:enemies,ammoPickup:pickup,obstacles:obs,dt:g.clock?g.clock.getDelta():0.15};})()');
 }
 
 async function hasLineOfSight(page, tx, tz) {
@@ -1033,7 +1033,7 @@ async function playThrough(page, runLabel) {
         // ── SURVIVAL FIRE (rusher engagement) ──
         // Fire while maintaining movement. Accept lower accuracy.
         // No waitSprintOut — react to sprint-block, don't block on it.
-        var sprintBlocked = await gameEval(page, 'game.weaponController ? game.weaponController.isSprintBlocked : false');
+        var sprintBlocked = state.sprintBlocked;
         if (!sprintBlocked) {
           // Can sprint — keep moving away, fire opportunistically
           // Use escape vector for heading
@@ -1262,7 +1262,7 @@ async function playThrough(page, runLabel) {
         // sprays the obstacle (observed: 420 shots, 13 hits).
         var kiteLos = false;
         if (ammo > 0 && !reloading) {
-          kiteLos = await checkLOSBetweenPoints(page, playerX, playerZ, nearestRusher ? nearestRusher.x : (target ? target.x : playerX), nearestRusher ? nearestRusher.z : (target ? target.z : playerZ));
+          kiteLos = state.rusherLOS; // batched in readGameState (1 evaluate)
         }
         if (ammo > 0 && !reloading && kiteLos) {
           // Hold-fire with continuous re-aim (see fireAimedBurst): one
@@ -1322,7 +1322,7 @@ async function playThrough(page, runLabel) {
       // 1.5-2s of a reload/burst exchange. Below 6m fight even without LOS:
       // fleeing at melee range is a certain death, shooting is only
       // probably one.
-      if (nearestRusher && nearestRusherDist < 10 && (decision.los || nearestRusherDist < 6)) {
+      if (nearestRusher && nearestRusherDist < 10 && (state.rusherLOS || nearestRusherDist < 6)) {
         currentState = STATE.ENGAGE;
         kitePhase = 0;
         kiteTimer = 0;
