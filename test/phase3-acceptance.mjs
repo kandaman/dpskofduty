@@ -125,24 +125,25 @@ async function waitSprintOut(page) {
 // each shot so the aim isn't stale — the enemy advances between the state
 // read and the shot.
 async function fireAimedBurst(page, enemyIdx, maxShots) {
+  // Hold-fire with continuous re-aim: the M4 is automatic, so holding the
+  // trigger while re-aiming every ~60ms keeps the aim→shot latency to
+  // ~one frame. (Discrete click cycles had 100-300ms of latency — at
+  // rusher speed that is 0.5-2m of lead error per shot.)
+  var live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+  if (!live) return 0;
+  await aimAt(page, live.x, live.z, 1.25);
+  await page.mouse.down({ button: 'right' }); // ADS: halve spread
+  await page.mouse.down();
+  var deadline = Date.now() + maxShots * 90; // fireCooldown is 80ms
   var fired = 0;
-  // ADS halves weapon spread (WeaponController: spread * (isAds ? 0.5 : 1))
-  await page.mouse.down({ button: 'right' });
-  for (var b = 0; b < maxShots; b++) {
-    var live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z,vx:e.velocity.x,vz:e.velocity.z};})()');
+  while (Date.now() < deadline) {
+    live = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + enemyIdx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
     if (!live) break;
-    // Lead the target: the enemy keeps moving during the aim→shot latency
-    // (~100ms), which at rusher speed (5-6.5) is 0.5-0.7m of miss.
-    await aimAt(page, live.x + live.vx * 0.15, live.z + live.vz * 0.15, 1.25);
-    await page.mouse.down();
-    await sleep(25);
-    await page.mouse.up();
-    await sleep(60); // fireCooldown is 80ms — keep per-shot >80ms so each fires
-    // Check if mag emptied
-    var liveAmmo = await gameEval(page, 'game.weaponController.currentWeapon.ammo');
-    if (typeof liveAmmo === 'number' && liveAmmo <= 0) break;
+    await aimAt(page, live.x, live.z, 1.25);
     fired++;
+    await sleep(60);
   }
+  await page.mouse.up();
   await page.mouse.up({ button: 'right' });
   return fired;
 }
@@ -425,6 +426,8 @@ async function playThrough(page, runLabel) {
     runtimeErrors: [],
     lastDeathDump: null
   };
+  var tickTimes = []; // per-tick wall-clock durations (ms) — reaction-latency diagnostic
+  var lastTickStart = Date.now();
 
   await lockPointer(page);
   await gameEval(page, 'game.dtCap = 0.3'); // headless mode runs at ~6-7fps (dt~0.15s), so dtCap must be >= actual dt for real-time physics
@@ -502,6 +505,10 @@ async function playThrough(page, runLabel) {
   await sleep(100);
 
   while (Date.now() - loopStart < MAX_DURATION) {
+    var __now = Date.now();
+    tickTimes.push(__now - lastTickStart);
+    lastTickStart = __now;
+
     // ── Read state ──
     var state = await readGameState(page);
     if (!state || !state.enemies) {
@@ -650,10 +657,11 @@ async function playThrough(page, runLabel) {
       }
     }
 
-    // Rusher inside 8m outranks the scored target — it must be shot down
-    // before it reaches melee, where aimAt (0.5m minimum) can't track it.
-    // This is what kills the bot: rushing while it duels a distant rifleman.
-    if (nearestRusher && nearestRusherDist < 8) {
+    // Any rusher outranks the scored target, at any distance — they spawn
+    // only 15-25m away and reach melee in ~2.5-3s, faster than a duel with
+    // a distant rifleman can finish. Riflemen chip slowly (8 dmg, range-
+    // penalized); a rusher at melee does 16.5 HP/s. Kill rushers first.
+    if (nearestRusher) {
       target = nearestRusher;
     }
 
@@ -703,11 +711,10 @@ async function playThrough(page, runLabel) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
-      // Rusher too close and we can't shoot it → retreat. With LOS, stand
-      // and fight instead: aimAt cannot target below 0.5m, so a melee-range
-      // rusher is unkillable — it must be shot down at range while it can
-      // still be seen. Only run when LOS is gone or HP is critical.
-      if ((nearestRusher && nearestRusherDist < 4 && !decision.los) || hp < HP_THRESHOLD.LOW) {
+      // Critical HP → retreat, but only if nothing is about to melee us:
+      // fleeing a melee-range rusher ends cornered at 0m where aimAt
+      // can't track it — standing and shooting is the better bet.
+      if (hp < HP_THRESHOLD.LOW && (!nearestRusher || nearestRusherDist > 6)) {
         nextState = STATE.RETREAT;
         stateTimer = 0;
       }
@@ -830,6 +837,15 @@ async function playThrough(page, runLabel) {
       // Don't recover if a rusher is in warning zone — must keep moving
       if (nearestRusher && nearestRusherDist < DISTANCE_ZONES.WARNING) {
         nextState = STATE.KITE_RUSHER;
+        stateTimer = 0;
+        coverPos = null;
+      }
+      // Any enemy (not just rushers) inside 6m means cover is compromised —
+      // fight instead of hiding (a rifleman shot the bot down from 3.5m
+      // while it hid at hp=3). No LOS condition: hiding at 0.8m from a
+      // visible enemy is just dying slowly.
+      if (nearestThreat && nearestDist < 6) {
+        nextState = STATE.ENGAGE;
         stateTimer = 0;
         coverPos = null;
       }
@@ -1030,13 +1046,20 @@ async function playThrough(page, runLabel) {
           await aimDirection(page, escapeHeading, 0);
           await moveCtrl.setMovement({ forward: true, sprint: true });
 
-          // Fire while moving (survival mode) — brief aimed burst
-          var liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z,vx:e.velocity.x,vz:e.velocity.z};})()');
+          // Fire while moving (survival mode) — hold-fire with continuous
+          // re-aim (see fireAimedBurst: latency per shot drops to ~1 frame)
+          var liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
           if (liveTarget) {
-            await aimAt(page, liveTarget.x + liveTarget.vx * 0.15, liveTarget.z + liveTarget.vz * 0.15, 1.25);
+            await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
             await page.mouse.down({ button: 'right' }); // ADS: halve spread
             await page.mouse.down();
-            await sleep(80);
+            var sfEnd = Date.now() + 240;
+            while (Date.now() < sfEnd) {
+              liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+              if (!liveTarget) break;
+              await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
+              await sleep(60);
+            }
             await page.mouse.up();
             await page.mouse.up({ button: 'right' });
           }
@@ -1045,12 +1068,18 @@ async function playThrough(page, runLabel) {
           await moveCtrl.setMovement({ forward: true, sprint: false });
           // Fire opportunistically if we have ammo and LOS
           if (ammo > 0 && targetLos) {
-            var liveTarget = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z,vx:e.velocity.x,vz:e.velocity.z};})()');
-            if (liveTarget) {
-              await aimAt(page, liveTarget.x + liveTarget.vx * 0.15, liveTarget.z + liveTarget.vz * 0.15, 1.25);
+            var liveTarget2 = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+            if (liveTarget2) {
+              await aimAt(page, liveTarget2.x, liveTarget2.z, 1.25);
               await page.mouse.down({ button: 'right' }); // ADS: halve spread
               await page.mouse.down();
-              await sleep(60);
+              var sfEnd2 = Date.now() + 180;
+              while (Date.now() < sfEnd2) {
+                liveTarget2 = await gameEval(page, '(function(){var g=window.game;var ee=g.enemyManager.enemies;var e=ee[' + target.idx + '];if(!e||!e.alive)return null;return{x:e.position.x,z:e.position.z};})()');
+                if (!liveTarget2) break;
+                await aimAt(page, liveTarget2.x, liveTarget2.z, 1.25);
+                await sleep(60);
+              }
               await page.mouse.up();
               await page.mouse.up({ button: 'right' });
             }
@@ -1216,21 +1245,26 @@ async function playThrough(page, runLabel) {
         // (the rusher closing in is usually nearest; riflemen/snipers get shot
         // when they're closer). Sprint-block clears after ~0.25s.
         await moveCtrl.setMovement({ forward: true, sprint: false });
+        // Only fire with LOS — a 3-shot burst at an enemy behind cover just
+        // sprays the obstacle (observed: 420 shots, 13 hits).
+        var kiteLos = false;
         if (ammo > 0 && !reloading) {
-          // Multi-shot burst: one shot per tick can't out-damage a 5-6.5
-          // speed rusher closing on a 5-speed walk. Fire a 3-shot burst
-          // (re-aim between shots), then resume the escape heading.
+          kiteLos = await checkLOSBetweenPoints(page, playerX, playerZ, nearestRusher ? nearestRusher.x : (target ? target.x : playerX), nearestRusher ? nearestRusher.z : (target ? target.z : playerZ));
+        }
+        if (ammo > 0 && !reloading && kiteLos) {
+          // Hold-fire with continuous re-aim (see fireAimedBurst): one
+          // shot per tick can't out-damage a 5-6.5 speed rusher closing on
+          // a 5-speed walk, and discrete clicks carry 100-300ms of aim lag.
           await page.mouse.down({ button: 'right' }); // ADS: halve spread
-          for (var kf = 0; kf < 3; kf++) {
-            var liveTarget = await gameEval(page, '(function(){var g=window.game;var pp=g.player.position;var ee=g.enemyManager.enemies;var best=null,bd=Infinity;for(var i=0;i<ee.length;i++){var e=ee[i];if(e&&e.alive){var d=pp.distanceTo(e.position);if(d<bd){bd=d;best={x:e.position.x,z:e.position.z,vx:e.velocity.x,vz:e.velocity.z};}}}return best;})()');
+          await page.mouse.down();
+          var kiteFireEnd = Date.now() + 500;
+          while (Date.now() < kiteFireEnd) {
+            var liveTarget = await gameEval(page, '(function(){var g=window.game;var pp=g.player.position;var ee=g.enemyManager.enemies;var best=null,bd=Infinity;for(var i=0;i<ee.length;i++){var e=ee[i];if(e&&e.alive){var d=pp.distanceTo(e.position);if(d<bd){bd=d;best={x:e.position.x,z:e.position.z};}}}return best;})()');
             if (!liveTarget) break;
-            // Lead the target (see fireAimedBurst)
-            await aimAt(page, liveTarget.x + liveTarget.vx * 0.15, liveTarget.z + liveTarget.vz * 0.15, 1.25);
-            await page.mouse.down();
-            await sleep(25);
-            await page.mouse.up();
-            await sleep(60); // > fireCooldown (80ms cycle incl. aim overhead)
+            await aimAt(page, liveTarget.x, liveTarget.z, 1.25);
+            await sleep(60);
           }
+          await page.mouse.up();
           await page.mouse.up({ button: 'right' });
           await aimDirection(page, kiteHeading, 0);
         }
@@ -1272,8 +1306,10 @@ async function playThrough(page, runLabel) {
       // 0.5m, so a melee-range rusher is unwinnable. ENGAGE with the
       // rusher-priority target stands and shoots it down while it can
       // still be aimed at. 10m because the rusher closes ~5m during the
-      // 1.5-2s of a reload/burst exchange.
-      if (nearestRusher && nearestRusherDist < 10 && decision.los) {
+      // 1.5-2s of a reload/burst exchange. Below 6m fight even without LOS:
+      // fleeing at melee range is a certain death, shooting is only
+      // probably one.
+      if (nearestRusher && nearestRusherDist < 10 && (decision.los || nearestRusherDist < 6)) {
         currentState = STATE.ENGAGE;
         kitePhase = 0;
         kiteTimer = 0;
@@ -1328,20 +1364,14 @@ async function playThrough(page, runLabel) {
       await page.keyboard.down('r');
       // Hold R until the game ACKNOWLEDGES the reload — a quick tap can be
       // missed entirely (keydown+keyup land between frames, and the game
-      // polls isKeyDown once per frame).
+      // polls isKeyDown once per frame). Do NOT wait for the reload to
+      // finish here: reloading is async in the game, and blocking this loop
+      // for seconds made the bot blind (10s dead-air ticks measured).
       var reloadStart = Date.now();
       var reloadAck = false;
-      var reloadingState = false;
-      while (Date.now() - reloadStart < 2000) {
-        reloadingState = await gameEval(page, 'game.weaponController ? game.weaponController.isReloading : false');
+      while (Date.now() - reloadStart < 1200) {
+        var reloadingState = await gameEval(page, 'game.weaponController ? game.weaponController.isReloading : false');
         if (reloadingState) { reloadAck = true; break; }
-        await sleep(100);
-      }
-      // Then wait for the reload to finish
-      reloadStart = Date.now();
-      while (reloadAck && Date.now() - reloadStart < 4000) {
-        reloadingState = await gameEval(page, 'game.weaponController ? game.weaponController.isReloading : false');
-        if (!reloadingState) break;
         await sleep(100);
       }
       await page.keyboard.up('r');
@@ -1454,6 +1484,16 @@ async function playThrough(page, runLabel) {
   await moveCtrl.releaseAll();
 
   metrics.duration = (Date.now() - loopStart) / 1000;
+  // Reaction-latency diagnostics: avg/median/max decision-loop tick (ms)
+  if (tickTimes.length) {
+    var sortedTicks = tickTimes.slice().sort(function(a, b) { return a - b; });
+    metrics.tickMs = {
+      avg: Math.round(tickTimes.reduce(function(a, b) { return a + b; }, 0) / tickTimes.length),
+      median: sortedTicks[Math.floor(sortedTicks.length / 2)],
+      max: sortedTicks[sortedTicks.length - 1],
+      count: tickTimes.length,
+    };
+  }
   metrics.kills = prevKills;
 
   // Sprint duty cycle telemetry
