@@ -54,6 +54,17 @@ src/
 
 ## Tech
 
-- Three.js r185 (WebGL2)
+- Three.js r170 (WebGL2)
 - Vite dev server
-- 100% procedural — no external assets, textures, or audio files
+- HDRI/IBL lighting, PBR materials (Poly Haven textures), FBX/GLB models
+- Asset licensing tracked in [ASSET-LICENSES.md](ASSET-LICENSES.md), inventory in `assets/manifest.json`
+
+## Testing
+
+Playwright-based bot tests drive a real browser (see `test/`). The main suite:
+
+```
+npm run test:phase3     # full acceptance suite (spawns dev server on :3005)
+```
+
+Individual checks live in `test/*.mjs`; ad-hoc diagnostics are archived in `test/archive/`.

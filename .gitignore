@@ -44,4 +44,6 @@ mcp_init.json
 # cannot be made publicly accessible. Developers must download individually.)
 public/assets/characters/rp_*.zip
 public/assets/characters/universal_base_characters.zip
-*.{0,200}
+
+# Asset archives (raw zips stay local; extracted models are tracked instead)
+public/assets/**/*.zip

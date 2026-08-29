@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
-import { MovementController } from './movement-controller.mjs';
+import { MovementController } from './lib/movement-controller.mjs';
 import {
   scoreThreat, chooseTargetThreat, estimateTTC,
   scoreEscapeHeading, findBestEscapeHeading,
