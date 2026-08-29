@@ -68,16 +68,16 @@ async function main() {
   // Give the player a big HP pool so the test can run long
   await page.evaluate(() => { game.player.maxHealth = 100000; game.player.health = 100000; });
 
-  var variants = { 'lead0': { hits: 0, shots: 0 }, 'lead015': { hits: 0, shots: 0 } };
+  var variants = { 'lead0': { hits: 0, shots: 0 }, 'lead005': { hits: 0, shots: 0 }, 'lead010': { hits: 0, shots: 0 } };
   var lastHits = await page.evaluate('(function(){var k=0;var ee=game.enemyManager.enemies;for(var i=0;i<ee.length;i++){if(ee[i].telemetry)k+=ee[i].telemetry.hits;}return k;})()');
   console.log('starting total enemy hits:', lastHits);
 
   var order = [];
-  for (var s = 0; s < 40; s++) order.push(s % 2 === 0 ? 'lead0' : 'lead015');
+  for (var s = 0; s < 60; s++) order.push(['lead0','lead005','lead010'][s % 3]);
 
   for (var s = 0; s < order.length; s++) {
     var v = order[s];
-    var lead = v === 'lead0' ? 0 : 0.15;
+    var lead = v === 'lead0' ? 0 : (v === 'lead005' ? 0.05 : 0.1);
 
     // Read nearest alive enemy with velocity + its health (hit = HP drop)
     var live = await page.evaluate('(function(){var g=window.game;var pp=g.player.position;var best=null,bd=Infinity;var ee=g.enemyManager.enemies;for(var i=0;i<ee.length;i++){var e=ee[i];if(e&&e.alive){var d=pp.distanceTo(e.position);if(d<bd){bd=d;best={x:e.position.x,z:e.position.z,vx:e.velocity.x,vz:e.velocity.z,hp:e.health};}}}return best;})()');
