@@ -466,30 +466,31 @@ async function runRealInputTest() {
   // ============================================================
   console.log('\n9. SPRINT VIA REAL INPUT (Shift+W)\n');
   await resetPlayer(0);
-  // Walk first (sans shift) — 4 frames for reliable game-time at 2fps
+  // Walk first (sans shift) — wall-clock duration: frame-count waits span
+  // unpredictable game time at 60fps (headed), making the ratio flaky
   var p0_walk = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
   await page.keyboard.down('w');
-  await waitForGameFrames(page, 4, 4000);
+  await sleep(400);
   await page.keyboard.up('w');
-  await waitForGameFrames(page, 1, 2000);
+  await sleep(100);
   var p1_walk = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
   var walkDist = getDelta(p0_walk, p1_walk).dist;
-  console.log('      Walk-only distance (4 frames): ' + walkDist.toFixed(2));
+  console.log('      Walk-only distance (400ms): ' + walkDist.toFixed(2));
 
-  // Now sprint — same frame count for fair comparison
+  // Now sprint — same wall-clock duration for fair comparison
   await resetPlayer(0);
   var p0_sprint = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
   // Press Shift before W to ensure sprint is active on first W frame
   await page.keyboard.down('ShiftLeft');
   await sleep(100);
   await page.keyboard.down('w');
-  await waitForGameFrames(page, 4, 4000);
+  await sleep(400);
   await page.keyboard.up('w');
   await page.keyboard.up('ShiftLeft');
-  await waitForGameFrames(page, 1, 2000);
+  await sleep(100);
   var p1_sprint = await gameEval(page, '({x:game.player.position.x, z:game.player.position.z})');
   var sprintDist = getDelta(p0_sprint, p1_sprint).dist;
-  console.log('      Sprint distance (3s): ' + sprintDist.toFixed(2));
+  console.log('      Sprint distance (400ms): ' + sprintDist.toFixed(2));
   assert(sprintDist > walkDist, 'Shift+W sprint moves farther than walk (' + sprintDist.toFixed(2) + ' vs ' + walkDist.toFixed(2) + ')');
 
   // ============================================================

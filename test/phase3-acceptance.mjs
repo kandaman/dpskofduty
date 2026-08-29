@@ -1164,9 +1164,18 @@ async function playThrough(page, runLabel) {
         if (coverPos) {
           var coverDist = Math.hypot(coverPos.x - playerX, coverPos.z - playerZ);
           if (coverDist < 20) {
-            currentState = STATE.RECOVER;
-            if (isFiring) { await stopFiring(page); isFiring = false; }
-            await moveCtrl.releaseAll();
+            // Actually walk to the cover point — entering RECOVER without
+            // moving there left the bot standing in the open (a "cover"
+            // spot 20m away protects nobody).
+            var coverHeading = Math.atan2(coverPos.x - playerX, coverPos.z - playerZ);
+            await aimDirection(page, coverHeading, 0);
+            await moveCtrl.setMovement({ forward: true, sprint: true });
+            isMovingAway = false;
+            if (coverDist < 2) {
+              currentState = STATE.RECOVER;
+              if (isFiring) { await stopFiring(page); isFiring = false; }
+              await moveCtrl.releaseAll();
+            }
           }
         }
       }
@@ -1233,18 +1242,22 @@ async function playThrough(page, runLabel) {
       kiteLastTick = nowTick;
 
       // ── KITE SUB-STATE MACHINE ──
+      // Distance math: sprint 8 vs rusher 6.5 gains 1.5 u/s; any walk loses
+      // ground. Cycle = short sprint burst (gains ~1.8m) + brief standstill
+      // hold-fire (~2.6m given back) ≈ break-even while pumping 3-4 shots
+      // per cycle into the rusher (2-3 hits kill it).
       if (kitePhase === 0) {
-        // Phase 0: SPRINT — escape direction, ~1.6s. Builds distance.
+        // Phase 0: SPRINT — escape direction, ~1.2s. Builds distance.
         await moveCtrl.setMovement({ forward: true, sprint: true });
-        if (kiteTimer > 1.6) {
+        if (kiteTimer > 1.2) {
           kitePhase = 1;
           kiteTimer = 0;
         }
       } else {
-        // Phase 1: WALK+FIRE — walk in escape heading, fire at nearest enemy
-        // (the rusher closing in is usually nearest; riflemen/snipers get shot
-        // when they're closer). Sprint-block clears after ~0.25s.
-        await moveCtrl.setMovement({ forward: true, sprint: false });
+        // Phase 1: STAND+FIRE — plant and hold-fire at the nearest enemy
+        // (the rusher closing in is usually nearest). Sprint-block clears
+        // after ~0.25s; hold-fire starts once clear.
+        await moveCtrl.setMovement({ forward: false, sprint: false });
         // Only fire with LOS — a 3-shot burst at an enemy behind cover just
         // sprays the obstacle (observed: 420 shots, 13 hits).
         var kiteLos = false;
@@ -1268,8 +1281,8 @@ async function playThrough(page, runLabel) {
           await page.mouse.up({ button: 'right' });
           await aimDirection(page, kiteHeading, 0);
         }
-        // After ~1.8s of walking+firing, sprint again
-        if (kiteTimer > 1.8) {
+        // After ~0.7s of standing fire, sprint again
+        if (kiteTimer > 0.7) {
           kitePhase = 0;
           kiteTimer = 0;
         }
