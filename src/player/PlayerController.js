@@ -66,10 +66,12 @@ export class PlayerController {
     const right = this.camera.getMovementRight();
 
     let moveX = 0, moveZ = 0;
-    if (input.isKeyDown('KeyW')) moveZ += 1;
-    if (input.isKeyDown('KeyS')) moveZ -= 1;
-    if (input.isKeyDown('KeyA')) moveX -= 1;
-    if (input.isKeyDown('KeyD')) moveX += 1;
+    // Arrow keys are accepted as alternates — a keydown that never reaches
+    // the game (IME/layout/hardware quirks) otherwise soft-locks movement.
+    if (input.isKeyDown('KeyW') || input.isKeyDown('ArrowUp')) moveZ += 1;
+    if (input.isKeyDown('KeyS') || input.isKeyDown('ArrowDown')) moveZ -= 1;
+    if (input.isKeyDown('KeyA') || input.isKeyDown('ArrowLeft')) moveX -= 1;
+    if (input.isKeyDown('KeyD') || input.isKeyDown('ArrowRight')) moveX += 1;
 
     // Normalize
     const len = Math.sqrt(moveX * moveX + moveZ * moveZ);

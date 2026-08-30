@@ -282,6 +282,7 @@ export class Game {
       'locked : ' + i.locked + '\n'
       + 'W ' + key('KeyW') + '   A ' + key('KeyA') + '\n'
       + 'S ' + key('KeyS') + '   D ' + key('KeyD') + '\n'
+      + 'lastKey: ' + (i.lastKeyCode || '-') + '\n'
       + 'yaw   : ' + c.yaw.toFixed(2) + '\n'
       + 'pitch : ' + THREE.MathUtils.radToDeg(c.pitch).toFixed(0) + 'deg\n'
       + 'pos   : ' + this.player.position.x.toFixed(1) + ', ' + this.player.position.z.toFixed(1);

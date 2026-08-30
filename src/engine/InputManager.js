@@ -21,6 +21,7 @@ export class InputManager {
 
   _onKeyDown(e) {
     this.keys[e.code] = true;
+    this.lastKeyCode = e.code + (e.isComposing ? ' (IME)' : '');
     if (['ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight'].includes(e.code)) {
       e.preventDefault();
     }
