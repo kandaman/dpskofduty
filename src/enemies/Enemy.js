@@ -1247,7 +1247,7 @@ export class Enemy {
       if (!this.alive || !this.game.player || this.game.player.health <= 0) continue;
       const damage = this.damage * (0.8 + Math.random() * 0.4);
       this.telemetry.damageDealt += damage;
-      this.game.takeDamage(damage);
+      this.game.takeDamage(damage, this.position);
       this.game.camera.addShake(0.3);
       this.game.audio.playProcedural('impact', { volume: 0.15, duration: 0.05 });
 

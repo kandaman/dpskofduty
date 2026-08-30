@@ -258,6 +258,9 @@ export class Game {
 
     // F3 debug overlay
     this._updateDebug();
+
+    // Directional hit markers
+    this._updateHitMarkers();
   }
 
   _toggleDebug() {
@@ -278,12 +281,13 @@ export class Game {
     const i = this.input;
     const c = this.camera;
     const key = k => i.isKeyDown(k) ? '[ON ]' : '[   ]';
+    const yawDeg = ((c.yaw * 180 / Math.PI) % 360 + 360) % 360;
     this.debugOverlay.textContent =
       'locked : ' + i.locked + '\n'
       + 'W ' + key('KeyW') + '   A ' + key('KeyA') + '\n'
       + 'S ' + key('KeyS') + '   D ' + key('KeyD') + '\n'
       + 'lastKey: ' + (i.lastKeyCode || '-') + '\n'
-      + 'yaw   : ' + c.yaw.toFixed(2) + '\n'
+      + 'yaw   : ' + yawDeg.toFixed(0) + 'deg\n'
       + 'pitch : ' + THREE.MathUtils.radToDeg(c.pitch).toFixed(0) + 'deg\n'
       + 'pos   : ' + this.player.position.x.toFixed(1) + ', ' + this.player.position.z.toFixed(1);
   }
@@ -330,6 +334,36 @@ export class Game {
 
     // Just translate the strip
     this._compassStrip.style.transform = `translateX(${-deg * 2 + 360}px)`;
+
+    // Enemy bearing ticks on the compass (pool of 8 red markers) — lets the
+    // player recover orientation by glancing at where threats are.
+    // Positioned relative to #compass (not the strip) and hidden beyond the
+    // ±50° window, since #compass must not clip (labels sit above it).
+    if (!this._compassEnemyTicks) {
+      this._compassEnemyTicks = [];
+      for (let i = 0; i < 8; i++) {
+        const t = document.createElement('div');
+        t.style.cssText = 'position:absolute;top:0;width:3px;height:12px;'
+          + 'background:rgba(255,60,60,0.95);box-shadow:0 0 5px rgba(255,0,0,0.8);'
+          + 'display:none;border-radius:1px;';
+        compass.appendChild(t);
+        this._compassEnemyTicks.push(t);
+      }
+    }
+    const enemies = this.enemyManager ? this.enemyManager.getActiveEnemies() : [];
+    const px = this.player.position.x, pz = this.player.position.z;
+    for (let i = 0; i < this._compassEnemyTicks.length; i++) {
+      const tick = this._compassEnemyTicks[i];
+      const e = enemies[i];
+      if (!e) { tick.style.display = 'none'; continue; }
+      const dx = e.position.x - px, dz = e.position.z - pz;
+      // same convention as player yaw: atan2(-dx, -dz)
+      let off = Math.atan2(-dx, -dz) * 180 / Math.PI - deg;
+      off = ((off + 180) % 360 + 360) % 360 - 180;
+      if (Math.abs(off) > 50) { tick.style.display = 'none'; continue; }
+      tick.style.display = 'block';
+      tick.style.left = 'calc(50% + ' + (off * 2 - 1.5) + 'px)';
+    }
   }
 
   _render(dt) {
@@ -340,7 +374,7 @@ export class Game {
     this.score += points;
   }
 
-  takeDamage(amount) {
+  takeDamage(amount, fromPos) {
     if (this.player.health <= 0) return;
 
     this.player.health -= amount;
@@ -353,9 +387,57 @@ export class Game {
       setTimeout(() => di.classList.remove('hit'), 200);
     }
 
+    // Directional hit marker — shows which way the shot came from, so a
+    // player who loses their bearings can recover
+    if (fromPos) {
+      const dx = fromPos.x - this.player.position.x;
+      const dz = fromPos.z - this.player.position.z;
+      this._hitMarkers = this._hitMarkers || [];
+      this._hitMarkers.push({ yaw: Math.atan2(-dx, -dz), t: performance.now() });
+      if (this._hitMarkers.length > 4) this._hitMarkers.shift();
+      this._ensureHitMarkers();
+    }
+
     if (this.player.health <= 0) {
       this.player.health = 0;
       this._onDeath();
+    }
+  }
+
+  _ensureHitMarkers() {
+    if (this._hitMarkerEls) return;
+    this._hitMarkerEls = [];
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:50%;top:50%;width:0;height:0;'
+      + 'pointer-events:none;z-index:600;';
+    document.body.appendChild(wrap);
+    for (let i = 0; i < 4; i++) {
+      const m = document.createElement('div');
+      m.style.cssText = 'position:absolute;left:-10px;top:-10px;width:0;height:0;'
+        + 'border-left:10px solid transparent;border-right:10px solid transparent;'
+        + 'border-bottom:16px solid rgba(255,50,50,0.95);display:none;'
+        + 'filter:drop-shadow(0 0 4px rgba(255,0,0,0.8));';
+      wrap.appendChild(m);
+      this._hitMarkerEls.push(m);
+    }
+  }
+
+  _updateHitMarkers() {
+    if (!this._hitMarkerEls) return;
+    const now = performance.now();
+    const life = 1000;
+    this._hitMarkers = (this._hitMarkers || []).filter(m => now - m.t < life);
+    for (let i = 0; i < this._hitMarkerEls.length; i++) {
+      const el = this._hitMarkerEls[i];
+      const m = this._hitMarkers[i];
+      if (!m) { el.style.display = 'none'; continue; }
+      const age = (now - m.t) / life;
+      // screen angle: 0 = straight ahead, positive = clockwise (to the right)
+      const rel = m.yaw - this.camera.yaw;
+      const cssDeg = -rel * 180 / Math.PI;
+      el.style.display = 'block';
+      el.style.opacity = String(1 - age);
+      el.style.transform = `rotate(${cssDeg}deg) translateY(-130px)`;
     }
   }
 
