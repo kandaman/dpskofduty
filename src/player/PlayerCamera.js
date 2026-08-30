@@ -35,8 +35,11 @@ export class PlayerCamera {
     this.pitch = 0;
 
     // ─── Mouse inertia ──────────────────────────────────────────
+    // smoothing 25: decay ~4%/frame — the view stops with the mouse.
+    // The old value (8) glided ~150ms after the mouse stopped, which at
+    // the pitch pole reads as "the view keeps spinning" (クルクル回転).
     this.velocity        = { yaw: 0, pitch: 0 };
-    this.smoothing       = 8;
+    this.smoothing       = 25;
     this.mouseSensitivity = 0.002;
 
     // ─── Layer 3: visual effects ─────────────────────────────────
