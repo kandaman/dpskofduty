@@ -17,11 +17,23 @@ export class InputManager {
     document.addEventListener('mousedown', this._onMouseDown);
     document.addEventListener('mouseup', this._onMouseUp);
     document.addEventListener('pointerlockchange', this._onPointerLockChange);
+    window.addEventListener('blur', this._onBlur.bind(this));
+  }
+
+  _onBlur() {
+    // Alt-tab / focus loss while holding a key leaves it stuck down
+    this.keys = {};
   }
 
   _onKeyDown(e) {
     this.keys[e.code] = true;
     this.lastKeyCode = e.code + (e.isComposing ? ' (IME)' : '');
+    if (e.repeat) this.lastKeyCode += ' (repeat)';
+    this._keyHistory = this._keyHistory || [];
+    if (this._keyHistory[0] !== this.lastKeyCode) {
+      this._keyHistory.unshift(this.lastKeyCode);
+      if (this._keyHistory.length > 6) this._keyHistory.pop();
+    }
     if (['ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight'].includes(e.code)) {
       e.preventDefault();
     }

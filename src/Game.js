@@ -282,10 +282,14 @@ export class Game {
     const c = this.camera;
     const key = k => i.isKeyDown(k) ? '[ON ]' : '[   ]';
     const yawDeg = ((c.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    const held = Object.keys(i.keys).filter(k => i.keys[k]).join(', ') || '-';
+    const hist = (i._keyHistory || []).join(' → ') || '-';
     this.debugOverlay.textContent =
       'locked : ' + i.locked + '\n'
       + 'W ' + key('KeyW') + '   A ' + key('KeyA') + '\n'
       + 'S ' + key('KeyS') + '   D ' + key('KeyD') + '\n'
+      + 'held   : ' + held + '\n'
+      + 'history: ' + hist + '\n'
       + 'lastKey: ' + (i.lastKeyCode || '-') + '\n'
       + 'yaw   : ' + yawDeg.toFixed(0) + 'deg\n'
       + 'pitch : ' + THREE.MathUtils.radToDeg(c.pitch).toFixed(0) + 'deg\n'
