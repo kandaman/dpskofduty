@@ -48,4 +48,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
+
+  // Pointer lock dropped mid-game (Esc, focus loss, driver hiccup) → show a
+  // clear pause screen. Aiming is dead while unlocked, and without this the
+  // player has no hint that a click recovers it.
+  const pauseOverlay = document.createElement('div');
+  pauseOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);'
+    + 'display:none;align-items:center;justify-content:center;z-index:900;'
+    + 'color:#fff;font-size:22px;font-family:sans-serif;letter-spacing:2px;'
+    + 'text-shadow:0 0 10px rgba(0,0,0,0.8);cursor:pointer;';
+  pauseOverlay.textContent = 'クリックして再開 — 照準ロックが解除されています';
+  document.body.appendChild(pauseOverlay);
+
+  document.addEventListener('pointerlockchange', () => {
+    if (!game) return;
+    const active = game.running && !game.gameOver;
+    pauseOverlay.style.display = (active && !document.pointerLockElement) ? 'flex' : 'none';
+  });
+  pauseOverlay.addEventListener('click', () => {
+    if (game) game.input.lock();
+  });
 });
