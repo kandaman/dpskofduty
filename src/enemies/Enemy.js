@@ -69,6 +69,19 @@ export class Enemy {
     this.mesh.position.copy(position);
     this.game.scene.add(this.mesh);
 
+    // Bullet hitbox — SkinnedMesh raycasts are unreliable (the raycast uses
+    // bind-pose geometry, whose bounding sphere sits at the model origin,
+    // not at the animated body), so give every enemy a plain invisible box
+    // that follows the group transform. Without this, shots pass through
+    // skinned characters without registering.
+    const hitbox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 2.6, 0.7),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitbox.name = 'hitbox';
+    hitbox.position.y = 1.3; // body center (group origin at feet)
+    this.mesh.add(hitbox);
+
     // Health bar
     this.healthBar = this._createHealthBar();
 

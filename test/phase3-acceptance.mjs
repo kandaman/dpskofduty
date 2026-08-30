@@ -4,6 +4,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import { MovementController } from './lib/movement-controller.mjs';
+import { INPAGE_BOT_INIT } from './lib/inpage-bot.mjs';
 import {
   scoreThreat, chooseTargetThreat, estimateTTC,
   scoreEscapeHeading, findBestEscapeHeading,
@@ -486,6 +487,84 @@ async function playThrough(page, runLabel) {
   // Release all keys at start
   await releaseAllKeys(page);
   await sleep(100);
+
+  var lastStatus = null;
+  // ═══════════════════════════════════════════════════════════════════
+  // IN-PAGE BOT MONITOR LOOP (v2)
+  // The combat FSM runs INSIDE the page at rAF rate (window.__bot —
+  // test/lib/inpage-bot.mjs). Node only polls status, logs waves,
+  // screenshots, and detects run end. No per-frame evaluates.
+  // Set BOT_ENGINE=v1 to fall back to the legacy Node-side FSM below
+  // (kept for A/B comparison).
+  // ═══════════════════════════════════════════════════════════════════
+  if (process.env.BOT_ENGINE !== 'v1') {
+  var lastCombatTime = Date.now();
+  var lastBotTicks = 0;
+  var lastShotPath = '';
+
+  while (Date.now() - loopStart < MAX_DURATION) {
+    await sleep(400);
+
+    var bstatus = await gameEval(page, 'window.__bot ? window.__bot.status : null');
+    if (!bstatus || !bstatus.ok) continue;
+    lastStatus = bstatus;
+    tickTimes.push(400);
+    if (bstatus.ticks - lastBotTicks >= 1) lastBotTicks = bstatus.ticks;
+
+    var enemies = bstatus.enemies || [];
+    var hp = typeof bstatus.hp === 'number' ? bstatus.hp : 100;
+    var currentWave = bstatus.wave || 0;
+
+    // Track metrics
+    if (bstatus.hp < metrics.minPlayerHp) metrics.minPlayerHp = bstatus.hp;
+    if (bstatus.hp < prevHp) metrics.damageReceived += (prevHp - bstatus.hp);
+    prevHp = bstatus.hp;
+    if (bstatus.kills > prevKills) { prevKills = bstatus.kills; metrics.kills = prevKills; }
+    prevAmmo = bstatus.ammo;
+
+    // Wave logging
+    if (currentWave !== lastWave && currentWave > 0) {
+      lastWave = currentWave;
+      metrics.waveTimes[currentWave] = { start: Date.now(), end: null, duration: null };
+      if (currentWave <= 6) {
+        console.log('   [' + runLabel + '] Wave ' + currentWave + ' active (HP=' + Math.round(hp) + ', Enemies=' + (bstatus.enemies || 0) + ', State=' + bstatus.state + ')');
+      }
+    }
+    if (bstatus.waveState === 'waveComplete' && lastWave && metrics.waveTimes[lastWave] && !metrics.waveTimes[lastWave].end) {
+      metrics.waveTimes[lastWave].end = Date.now();
+      metrics.waveTimes[lastWave].duration = ((metrics.waveTimes[lastWave].end - metrics.waveTimes[lastWave].start) / 1000).toFixed(1);
+      metrics.wavesCompleted = Math.max(metrics.wavesCompleted, lastWave);
+    }
+
+    // Periodic bot-view capture
+    var __now2 = Date.now();
+    var __shotPath2 = path.join(RESULT_DIR, 'botview-' + runLabel + '-' + Math.round((__now2 - loopStart) / 10000) + '0s.png');
+    if (__shotPath2 !== lastShotPath) {
+      lastShotPath = __shotPath2;
+      try { await page.screenshot({ path: __shotPath2, timeout: 5000 }); } catch (e) {}
+    }
+
+    // Victory check
+    if (bstatus.victory || bstatus.waveState === 'victory') {
+      metrics.reachedVictory = true;
+      console.log('   [' + runLabel + '] VICTORY!');
+      break;
+    }
+
+    // Death check
+    if (bstatus.gameOver || (typeof bstatus.hp === 'number' && bstatus.hp <= 0)) {
+      metrics.deaths++;
+      dumpDecisionLog(decisionLog);
+      metrics.lastDeathDump = [{ state: bstatus.state, hp: bstatus.hp, wave: currentWave, kills: bstatus.kills }];
+      console.log('   [' + runLabel + '] Died (Wave ' + (currentWave || '?') + ', HP=' + hp + ', botState=' + bstatus.state + ')');
+      break;
+    }
+
+    if (bstatus.enemies === 0) { lastCombatTime = Date.now(); }
+  } // end while (in-page bot monitor)
+
+  } else {
+  // ═══ LEGACY NODE-SIDE FSM (BOT_ENGINE=v1) ═══
 
   while (Date.now() - loopStart < MAX_DURATION) {
     var __now = Date.now();
@@ -1448,6 +1527,14 @@ async function playThrough(page, runLabel) {
     // Small sleep to prevent tight loop
     await sleep(30);
   } // end while
+  } // end BOT_ENGINE=v1 branch
+
+  // In-page bot activity diagnostics
+  if (lastStatus && lastStatus.ticks) {
+    metrics.botFps = Math.round(lastStatus.ticks / ((Date.now() - loopStart) / 1000));
+    metrics.botState = lastStatus.state;
+  }
+
 
   // ── Cleanup ──
   if (isFiring) { await stopFiring(page); isFiring = false; }
@@ -1917,6 +2004,8 @@ async function runPhase3() {
         });
       };
     });
+    // In-page combat FSM (v2 bot) — activates when window.game appears
+    await ctx.addInitScript(INPAGE_BOT_INIT);
     page = await ctx.newPage();
     allErrors = await setupErrorCapture(page);
     webglOk = await page.evaluate(function() {
@@ -1988,6 +2077,7 @@ async function runPhase3() {
           await ctx.addInitScript(function() {
             if (Element.prototype.requestPointerLock) Element.prototype.requestPointerLock = function() {};
           });
+          await ctx.addInitScript(INPAGE_BOT_INIT);
           page = await ctx.newPage();
           allErrors = await setupErrorCapture(page);
         }
