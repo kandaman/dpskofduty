@@ -69,6 +69,46 @@ export class Enemy {
     this.mesh.position.copy(position);
     this.game.scene.add(this.mesh);
 
+    // ── Readability pass ──────────────────────────────────────────
+    // Enemies are the gameplay targets: keep them crisp and identifiable.
+    // 1) fog off — the level fades into haze at range, enemies must not
+    // 2) faint red emissive — silhouettes survive shadowed areas
+    // 3) emissive red team markers (headband + shoulder patches) — clear
+    //    "enemy" identity against the desert palette
+    this.mesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(mat => {
+          if (mat.fog !== undefined) mat.fog = false;
+          if (mat.emissive && !mat.emissive.getHex()) mat.emissive.setHex(0x1a0000);
+          mat.needsUpdate = true;
+        });
+      }
+    });
+    const teamMat = new THREE.MeshStandardMaterial({
+      color: 0x9a1a1a,
+      emissive: 0xff2020,
+      emissiveIntensity: 0.75,
+      roughness: 0.5,
+      fog: false
+    });
+    // Headband around the helmet dome (at head height for either mesh path)
+    let headY = 1.05;
+    if (this.headMesh) {
+      const wp = this.headMesh.getWorldPosition(new THREE.Vector3());
+      headY = Math.max(0.6, wp.y - this.mesh.position.y);
+    }
+    const headband = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.015, 6, 14), teamMat);
+    headband.position.set(0, headY, 0);
+    headband.rotation.x = Math.PI / 2;
+    this.mesh.add(headband);
+    // Shoulder patches
+    for (const sx of [-0.14, 0.14]) {
+      const patch = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.07), teamMat);
+      patch.position.set(sx, 0.72, 0);
+      this.mesh.add(patch);
+    }
+
     // Bullet hitbox — SkinnedMesh raycasts are unreliable (the raycast uses
     // bind-pose geometry, whose bounding sphere sits at the model origin,
     // not at the animated body), so give every enemy a plain invisible box
