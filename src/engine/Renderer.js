@@ -5,12 +5,27 @@ export class Renderer {
     this.game = game;
     this._quality = 'ULTRA'; // default highest quality
 
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
-      stencil: false,
-      depth: true
-    });
+    // Fail loudly instead of a silent black screen: WebGL context creation
+    // fails intermittently on some GPU drivers (NVIDIA
+    // "BindToCurrentSequence"), especially under heavy GPU load.
+    try {
+      this.renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: 'high-performance',
+        stencil: false,
+        depth: true
+      });
+    } catch (err) {
+      console.error('WebGL init failed:', err);
+      const msg = document.createElement('div');
+      msg.style.cssText = 'position:fixed;inset:0;background:#000;color:#ffcf40;'
+        + 'display:flex;align-items:center;justify-content:center;text-align:center;'
+        + 'font-family:sans-serif;font-size:18px;padding:24px;z-index:9999';
+      msg.textContent = 'WebGLの初期化に失敗しました。ページを再読み込み (Ctrl+F5) してください。'
+        + '改善しない場合、他のタブやアプリを閉じてから再試行してください。';
+      document.body.appendChild(msg);
+      throw err;
+    }
 
     // Pixel ratio: cap at 2 for performance (set to 1 for MEDIUM)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
