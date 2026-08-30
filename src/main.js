@@ -31,10 +31,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Also click on canvas to re-lock
+  // Click anywhere while playing to re-lock the pointer. Without this, a
+  // silently dropped lock (Esc cooldown, focus loss) leaves the player
+  // unable to aim — the cursor just sits there and mouse look is dead.
   document.addEventListener('click', () => {
     if (game && game.running && !game.gameOver && !document.pointerLockElement) {
-      // Only if the game is active
+      game.input.lock();
     }
   });
 

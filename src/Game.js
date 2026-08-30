@@ -59,6 +59,15 @@ export class Game {
     // Game loop binding
     this._boundLoop = this._loop.bind(this);
 
+    // F3 input/camera debug overlay (diagnoses "key X doesn't work" /
+    // "view spins at pole" reports remotely)
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'F3') {
+        e.preventDefault();
+        this._toggleDebug();
+      }
+    });
+
     // Player alive state
     this.player.alive = true;
     this.player.maxHealth = 100;
@@ -246,6 +255,36 @@ export class Game {
 
     // Update minimap
     this.minimap.update();
+
+    // F3 debug overlay
+    this._updateDebug();
+  }
+
+  _toggleDebug() {
+    if (this.debugOverlay) {
+      this.debugOverlay.remove();
+      this.debugOverlay = null;
+      return;
+    }
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.7);'
+      + 'color:#0f0;font:12px monospace;padding:8px;z-index:10000;white-space:pre;line-height:1.5';
+    document.body.appendChild(div);
+    this.debugOverlay = div;
+  }
+
+  _updateDebug() {
+    if (!this.debugOverlay) return;
+    const i = this.input;
+    const c = this.camera;
+    const key = k => i.isKeyDown(k) ? '[ON ]' : '[   ]';
+    this.debugOverlay.textContent =
+      'locked : ' + i.locked + '\n'
+      + 'W ' + key('KeyW') + '   A ' + key('KeyA') + '\n'
+      + 'S ' + key('KeyS') + '   D ' + key('KeyD') + '\n'
+      + 'yaw   : ' + c.yaw.toFixed(2) + '\n'
+      + 'pitch : ' + THREE.MathUtils.radToDeg(c.pitch).toFixed(0) + 'deg\n'
+      + 'pos   : ' + this.player.position.x.toFixed(1) + ', ' + this.player.position.z.toFixed(1);
   }
 
   _updateCompass() {

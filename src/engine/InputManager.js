@@ -51,7 +51,9 @@ export class InputManager {
   }
 
   lock() {
-    document.body.requestPointerLock();
+    // Chrome returns a promise; it rejects on the Esc-cooldown — swallow it
+    const p = document.body.requestPointerLock();
+    if (p && p.catch) p.catch(() => {});
   }
 
   unlock() {
